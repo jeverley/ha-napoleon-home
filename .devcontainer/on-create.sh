@@ -42,7 +42,12 @@ unset _hook_file
 print_info "Fixing ownership of Docker volume mount points..."
 sudo chown vscode:vscode \
     /home/vscode/ha-venv \
-    /home/vscode/uv-cache
+    /home/vscode/uv-cache \
+    /home/vscode/ai-config
+
+# Symlink AI tool paths into the shared volume.
+mkdir -p /home/vscode/ai-config/.claude
+ln -sfn /home/vscode/ai-config/.claude /home/vscode/.claude
 
 # Run post-hook if present
 _hook_file="$(cd "$(dirname "$0")" && pwd)/hooks/on-create.post.sh"
