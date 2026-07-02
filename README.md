@@ -11,7 +11,7 @@ A Home Assistant integration for **Napoleon Prestige grills**, providing direct 
 
 ## Features
 
-- **Bluetooth auto-discovery** — grills advertising as `Prestige-*` are detected automatically
+- **Bluetooth auto-discovery** — grills are detected automatically via their Bluetooth service UUID
 - **Multiple grills** — add as many grills as you like under a single account
 - **Probe and grill temperatures** — monitor Probe 1–3 plus grill temperature with configurable targets
 - **Gas tank weight** — track remaining gas level
