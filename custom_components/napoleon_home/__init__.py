@@ -9,7 +9,7 @@ from homeassistant.components.bluetooth import async_rediscover_address
 from homeassistant.const import Platform
 import homeassistant.helpers.config_validation as cv
 
-from .const import CONF_DEVICES, DOMAIN
+from .const import CONF_BT_MAC, CONF_DEVICES, DOMAIN
 from .coordinator import NapoleonHomeDataUpdateCoordinator
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ async def async_setup_entry(
 ) -> bool:
     """Set up Napoleon Home from a config entry."""
     coordinators: NapoleonHomeCoordinators = {
-        mac: NapoleonHomeDataUpdateCoordinator(hass, entry, mac) for mac in entry.data.get(CONF_DEVICES, {})
+        dsn: NapoleonHomeDataUpdateCoordinator(hass, entry, dsn) for dsn in entry.data.get(CONF_DEVICES, {})
     }
     entry.runtime_data = coordinators
     await asyncio.gather(*(c.async_config_entry_first_refresh() for c in coordinators.values()))
@@ -62,23 +62,25 @@ async def async_remove_config_entry_device(
     device_entry: DeviceEntry,
 ) -> bool:
     """Remove a grill device and its data when deleted from the UI."""
-    mac = next(
+    dsn = next(
         (identifier for domain, identifier in device_entry.identifiers if domain == DOMAIN),
         None,
     )
-    if mac is None:
+    if dsn is None:
         return False
     devices = entry.data.get(CONF_DEVICES, {})
-    if mac not in devices:
+    if dsn not in devices:
         return True
-    coordinator = entry.runtime_data.pop(mac, None)
+    coordinator = entry.runtime_data.pop(dsn, None)
+    mac = devices[dsn].get(CONF_BT_MAC)
     if coordinator is not None:
         await coordinator.async_shutdown()
     hass.config_entries.async_update_entry(
         entry,
-        data={**entry.data, CONF_DEVICES: {m: d for m, d in devices.items() if m != mac}},
+        data={**entry.data, CONF_DEVICES: {d: v for d, v in devices.items() if d != dsn}},
     )
-    async_rediscover_address(hass, mac)
+    if mac:
+        async_rediscover_address(hass, mac)
     return True
 
 

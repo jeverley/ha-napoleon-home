@@ -15,7 +15,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from custom_components.napoleon_home.config_flow_handler.schemas import CONF_POLL_INTERVAL
-from custom_components.napoleon_home.const import CONF_DEVICES, CONF_LOCAL_KEY, DOMAIN, LOGGER, POLL_INTERVAL_S
+from custom_components.napoleon_home.const import (
+    CONF_BT_MAC,
+    CONF_DEVICES,
+    CONF_LOCAL_KEY,
+    DOMAIN,
+    LOGGER,
+    POLL_INTERVAL_S,
+)
 from custom_components.napoleon_home.coordinator.listeners import NapoleonHomeBLEMixin
 from custom_components.napoleon_home.data import NapoleonHomeGrillState
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -50,7 +57,7 @@ class NapoleonHomeDataUpdateCoordinator(DataUpdateCoordinator[NapoleonHomeGrillS
         self,
         hass: Any,
         config_entry: NapoleonHomeConfigEntry,
-        mac: str,
+        dsn: str,
     ) -> None:
         """
         Initialise the coordinator.
@@ -59,26 +66,32 @@ class NapoleonHomeDataUpdateCoordinator(DataUpdateCoordinator[NapoleonHomeGrillS
             hass: The Home Assistant instance.
             config_entry: The hub config entry (provides poll interval from options
                 and the background task helper).
-            mac: The BLE MAC address (``mac.lower()``) used as the key in
-                ``entry.data[CONF_DEVICES]``.
+            dsn: The device DSN used as the key in ``entry.data[CONF_DEVICES]``.
 
         """
         self._poll_interval: int = config_entry.options.get(CONF_POLL_INTERVAL, POLL_INTERVAL_S)
+        self._dsn = dsn
+        device_data = config_entry.data[CONF_DEVICES][dsn]
+        mac = device_data[CONF_BT_MAC]
         super().__init__(
             hass,
             LOGGER,
-            name=f"{DOMAIN}_{mac}",
+            name=f"{DOMAIN}_{dsn}",
             update_interval=None,
         )
         self.config_entry = config_entry
         self._device_mac = mac
-        device_data = config_entry.data[CONF_DEVICES][mac]
         self._init_ble(mac, device_data[CONF_LOCAL_KEY])
 
     @property
     def device_data(self) -> dict[str, Any]:
         """Return the device dict from entry.data for this coordinator's grill."""
-        return self.config_entry.data[CONF_DEVICES][self._device_mac]
+        return self.config_entry.data[CONF_DEVICES][self._dsn]
+
+    @property
+    def dsn(self) -> str:
+        """Return the DSN for this grill."""
+        return self._dsn
 
     @property
     def mac(self) -> str:
@@ -97,7 +110,7 @@ class NapoleonHomeDataUpdateCoordinator(DataUpdateCoordinator[NapoleonHomeGrillS
         """
         self.data = NapoleonHomeGrillState()
         self._register_bt_callback()
-        LOGGER.debug("Coordinator setup complete for Napoleon Home %s", self._mac)
+        LOGGER.debug("Coordinator setup complete for Napoleon Home %s", self._device_mac)
 
     async def _async_update_data(self) -> NapoleonHomeGrillState:
         """

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from custom_components.napoleon_home.const import CONF_DSN, DOMAIN, MANUFACTURER
+from custom_components.napoleon_home.const import DOMAIN, MANUFACTURER
 from homeassistant.helpers.device_registry import DeviceInfo
 
 if TYPE_CHECKING:
@@ -24,12 +24,12 @@ def build_device_info(coordinator: NapoleonHomeDataUpdateCoordinator) -> DeviceI
     """
     Build the device registry entry for a Napoleon Prestige grill.
 
-    Uses the grill MAC address as the stable device identifier so that
-    the device registry entry persists across integration reinstalls.
+    Uses the DSN as the stable device identifier so that the device registry
+    entry persists across integration reinstalls and supports future cloud control.
 
     Args:
-        coordinator: The BLE coordinator for this grill. Provides MAC address,
-            device name, and DSN from the entry's device data dict.
+        coordinator: The BLE coordinator for this grill. Provides DSN,
+            BT MAC address, and device name from the entry's device data dict.
 
     Returns:
         A ``DeviceInfo`` instance suitable for setting on
@@ -38,9 +38,9 @@ def build_device_info(coordinator: NapoleonHomeDataUpdateCoordinator) -> DeviceI
     """
     device_data = coordinator.device_data
     return DeviceInfo(
-        identifiers={(DOMAIN, coordinator.mac)},
+        identifiers={(DOMAIN, coordinator.dsn)},
         name=device_data["name"],
         manufacturer=MANUFACTURER,
         model="Prestige",
-        serial_number=device_data.get(CONF_DSN),
+        serial_number=coordinator.dsn,
     )

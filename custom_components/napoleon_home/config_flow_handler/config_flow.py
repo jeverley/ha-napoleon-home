@@ -5,7 +5,7 @@ This module implements the configuration flow for initial hub setup via BLE
 discovery, plus reauthentication when local keys need refreshing.
 
 The integration uses a hub model: one config entry per Napoleon account, with
-per-device data stored in ``entry.data[CONF_DEVICES]`` keyed by MAC address.
+per-device data stored in ``entry.data[CONF_DEVICES]`` keyed by DSN.
 
 Setup flow (BLE discovery — only supported path):
     1. ``async_step_bluetooth``: Grill advertisement fires. MAC validated against
@@ -68,8 +68,8 @@ from custom_components.napoleon_home.const import (
     AYLA_REGION_US,
     AYLA_REGIONS,
     CONF_ACCESS_TOKEN,
+    CONF_BT_MAC,
     CONF_DEVICES,
-    CONF_DSN,
     CONF_LOCAL_KEY,
     CONF_LOCAL_KEY_ID,
     CONF_REFRESH_TOKEN,
@@ -189,7 +189,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     """
 
-    VERSION = 3
+    VERSION = 1
     MINOR_VERSION = 1
 
     @staticmethod
@@ -252,7 +252,10 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             discovery_info.name,
         )
         for entry in self.hass.config_entries.async_entries(DOMAIN):
-            if discovery_info.address.upper() in entry.data.get(CONF_DEVICES, {}):
+            if any(
+                d.get(CONF_BT_MAC, "").upper() == discovery_info.address.upper()
+                for d in entry.data.get(CONF_DEVICES, {}).values()
+            ):
                 LOGGER.info(
                     "Napoleon Home: setup_stage=bluetooth_step_abort reason=already_configured address=%s",
                     discovery_info.address,
@@ -663,9 +666,8 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """
         # DSN uniqueness check
         for entry in self.hass.config_entries.async_entries(DOMAIN):
-            for device in entry.data.get(CONF_DEVICES, {}).values():
-                if device.get(CONF_DSN) == dsn:
-                    return self.async_abort(reason="already_configured")
+            if dsn in entry.data.get(CONF_DEVICES, {}):
+                return self.async_abort(reason="already_configured")
 
         # Resolve connectable MAC candidates (offset variants + name-matched discoveries).
         mac_candidates = await self._async_resolve_valid_mac(device_name)
@@ -726,7 +728,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_TOKEN_EXPIRY: self._token_expiry,
         }
         device_data = {
-            CONF_DSN: dsn,
+            CONF_BT_MAC: mac,
             CONF_LOCAL_KEY: local_key,
             CONF_LOCAL_KEY_ID: local_key_id,
             "name": title,
@@ -739,9 +741,9 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         if existing_hub is not None:
-            if mac in existing_hub.data.get(CONF_DEVICES, {}):
+            if dsn in existing_hub.data.get(CONF_DEVICES, {}):
                 return self.async_abort(reason="already_configured")
-            updated_devices = {**existing_hub.data.get(CONF_DEVICES, {}), mac: device_data}
+            updated_devices = {**existing_hub.data.get(CONF_DEVICES, {}), dsn: device_data}
             self.hass.config_entries.async_update_entry(
                 existing_hub,
                 data={**existing_hub.data, **hub_data, CONF_DEVICES: updated_devices},
@@ -753,7 +755,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_create_entry(
             title=f"Napoleon Home ({self._username})",
-            data={**hub_data, CONF_DEVICES: {mac: device_data}},
+            data={**hub_data, CONF_DEVICES: {dsn: device_data}},
         )
 
     async def _async_resolve_valid_mac(self, device_name: str) -> list[str]:
@@ -847,10 +849,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             region_key = user_input[CONF_REGION]
 
             devices = reauth_entry.data.get(CONF_DEVICES, {})
-            # Only include devices that have a DSN — devices migrated from v1 may
-            # have an empty string if the subentry lacked the field.
-            mac_dsn_pairs = [(mac, d[CONF_DSN]) for mac, d in devices.items() if d.get(CONF_DSN)]
-            dsns = [dsn for _, dsn in mac_dsn_pairs]
+            dsns = list(devices)
 
             async with self._handle_api_errors(errors):
                 region = AYLA_REGIONS[region_key]
@@ -861,9 +860,9 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             if "base" not in errors:
                 updated_devices = dict(devices)
-                for (mac, _), (local_key, local_key_id) in zip(mac_dsn_pairs, keys, strict=True):
-                    updated_devices[mac] = {
-                        **updated_devices[mac],
+                for dsn, (local_key, local_key_id) in zip(dsns, keys, strict=True):
+                    updated_devices[dsn] = {
+                        **updated_devices[dsn],
                         CONF_LOCAL_KEY: local_key,
                         CONF_LOCAL_KEY_ID: local_key_id,
                     }

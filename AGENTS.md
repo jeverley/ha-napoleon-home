@@ -247,23 +247,20 @@ This integration uses the following identifiers consistently:
 
 This integration uses a hub/sub-entry model — **not** a single-config-entry-per-device model:
 
-- **Hub entry** (one per Napoleon account) — stores `{CONF_REGION, CONF_USERNAME}`; unique ID is `f"{username.lower()}_{region_key}"` (e.g. `"user@example.com_eu"`)
-- **Sub-entry** (one per grill) — stores `{CONF_MAC, CONF_DSN, CONF_LOCAL_KEY}`; unique ID is the BLE MAC address in lowercase (e.g. `"ff:ee:dd:cc:bb:aa"`)
+- **Hub entry** (one per Napoleon account) — stores `{CONF_REGION, CONF_USERNAME, CONF_DEVICES, ...}`; unique ID is `f"{username.lower()}_{region_key}"` (e.g. `"user@example.com_eu"`)
+- **`CONF_DEVICES`** — dict keyed by DSN (e.g. `"AC000W011111111"`); each value stores `{CONF_BT_MAC, CONF_LOCAL_KEY, CONF_LOCAL_KEY_ID, "name"}`; device registry identifier is `(DOMAIN, dsn)`
 
 **Type aliases (see `data.py`):**
 
 - `NapoleonHomeConfigEntry = ConfigEntry[NapoleonHomeCoordinators]`
-- `NapoleonHomeCoordinators = dict[str, NapoleonHomeDataUpdateCoordinator]` — keyed by `subentry_id` (not DSN, not MAC)
+- `NapoleonHomeCoordinators = dict[str, NapoleonHomeDataUpdateCoordinator]` — keyed by DSN
 
-**`runtime_data`** is `NapoleonHomeCoordinators` (a plain `dict`). The `__init__.py` setup loop iterates `entry.subentries.items()` and filters by `subentry_type == SUBENTRY_TYPE_DEVICE`.
+**`runtime_data`** is `NapoleonHomeCoordinators` (a plain `dict`). The `__init__.py` setup loop iterates `entry.data[CONF_DEVICES]` keyed by DSN.
 
 **Critical rules:**
 
 - `ConfigSubentry.data` **must** be a `MappingProxyType` when constructing a `ConfigSubentry` for `async_add_subentry` directly
-- `ConfigFlowHandler` **must** implement `async_get_supported_subentry_types()` returning `{SUBENTRY_TYPE_DEVICE: NapoleonHomeGrillSubentryFlowHandler}`
-- When adding entities for a sub-entry, pass `config_subentry_id=subentry_id` to `AddConfigEntryEntitiesCallback` — omitting it silently attaches entities to the hub entry, breaking device attribution
-
-**MAC casing convention:** stored uppercase everywhere — in config data (`CONF_DEVICES` keys: `"FF:EE:DD:CC:BB:AA"`) and in entity unique IDs (`unique_id="FF:EE:DD:CC:BB:AA_some_key"`).
+  **MAC casing convention:** `CONF_BT_MAC` stored uppercase (e.g. `"FF:EE:DD:CC:BB:AA"`). Entity unique IDs use DSN + key suffix (e.g. `unique_id="AC000W011111111_some_key"`); device registry identifier uses DSN.
 
 ### Device Info
 
@@ -348,7 +345,7 @@ python3 -m script.scaffold config_flow_oauth2     # OAuth2 flow
 - Implement in `config_flow_handler/` package
 - Support user setup, discovery, reauth, reconfigure
 - Always set unique_id for discovered entries
-- **Design:** setup is BLE-discovery only — `async_step_user` aborts with `discovery_required`. The grill must be advertising when setup begins. The flow probes provisioning state via BLE (`_async_probe_ble`) and reads the DSN from the open GATT DUID characteristic (`00000001-fe28`) during the same connection. Routes through `provision_guide` / `factory_reset_guide` as needed before reaching `key_retrieval` (credentials form). Device matching uses DSN (from GATT read) when known; otherwise every account device's key is tried via real BLE auth until one is accepted by the grill.
+- **Design:** setup is BLE-discovery only — `async_step_user` aborts with `discovery_required`. The grill must be advertising when setup begins. The flow probes provisioning state via BLE (`_async_probe_ble`) and reads the DSN from the GATT DUID characteristic (`00000001-fe28`) after pairing during the same connection. Routes through `provision_guide` / `factory_reset_guide` as needed before reaching `key_retrieval` (credentials form). Device matching uses DSN (from GATT read) when known; otherwise every account device's key is tried via real BLE auth until one is accepted by the grill.
 
 See `.github/instructions/blueprint.config_flow.instructions.md` for comprehensive patterns.
 
@@ -385,17 +382,16 @@ See `.github/instructions/blueprint.config_flow.instructions.md` for comprehensi
 
 **GATT readable characteristics (service `0000fe28`):**
 
-Requires bond (ATT 0x0F without an active encrypted session):
+| Short UUID      | Name                         | Bond required? | Example value                                              |
+| --------------- | ---------------------------- | -------------- | ---------------------------------------------------------- |
+| `00000001-fe28` | `GATT_CHAR_DUID`             | Yes            | `"AC000W011111111"` (DSN / serial number)                  |
+| `00000002-fe28` | `GATT_CHAR_OEM_ID`           | No             | `"146516a1"` (Napoleon's Ayla OEM ID — not used in crypto) |
+| `00000003-fe28` | `GATT_CHAR_OEM_MODEL`        | No             | `"thermometer-mqtt-eu"` (EU); `"thermometer-mqtt-us"` (US) |
+| `00000004-fe28` | `GATT_CHAR_TEMPLATE_VERSION` | No             | `"v3.0.19"` (Ayla template version)                        |
+| `00000005-fe28` | `GATT_CHAR_IDENTIFY`         | No             | write-only; provisioning use only                          |
+| `00000006-fe28` | `GATT_CHAR_DISPLAY_NAME`     | Yes            | user-configurable alias                                    |
 
-| Short UUID      | Name                         | Example value                                              |
-| --------------- | ---------------------------- | ---------------------------------------------------------- |
-| `00000001-fe28` | `GATT_CHAR_DUID`             | `"AC000W011111111"` (DSN / serial number)                  |
-| `00000002-fe28` | `GATT_CHAR_OEM_ID`           | `"146516a1"` (Napoleon's Ayla OEM ID — not used in crypto) |
-| `00000003-fe28` | `GATT_CHAR_OEM_MODEL`        | `"thermometer-mqtt-eu"` (EU); `"thermometer-mqtt-us"` (US) |
-| `00000004-fe28` | `GATT_CHAR_TEMPLATE_VERSION` | `"v3.0.19"` (firmware)                                     |
-| `00000006-fe28` | `GATT_CHAR_DISPLAY_NAME`     | user-configurable alias                                    |
-
-Note: On provisioned hardware, both `GATT_CHAR_DUID` (DSN) and `GATT_CHAR_DISPLAY_NAME` require an encrypted (bonded) link — reads before `pair()` fail with ATT error 0x0F (Insufficient Encryption).
+Confirmed on provisioned hardware from an unpaired phone (nRF Connect, 2026-07-02). Only `GATT_CHAR_DUID` and `GATT_CHAR_DISPLAY_NAME` require an encrypted bonded link — reads fail with ATT 0x0F without bond.
 
 **Prestige property name reference:**
 

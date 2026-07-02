@@ -65,7 +65,7 @@ class NapoleonHomeEntity(CoordinatorEntity[NapoleonHomeDataUpdateCoordinator]):
         """
         super().__init__(coordinator)
         self.entity_description = entity_description
-        self._attr_unique_id = f"{coordinator.mac}_{entity_description.key}"
+        self._attr_unique_id = f"{coordinator.dsn}_{entity_description.key}"
         self._attr_device_info = build_device_info(coordinator)
 
     @property

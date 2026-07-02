@@ -38,7 +38,7 @@ CONF_LOCAL_KEY_ID = "local_key_id"
 CONF_ACCESS_TOKEN = "access_token"
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_TOKEN_EXPIRY = "token_expiry"
-CONF_MAC = "mac_address"
+CONF_BT_MAC = "bt_mac_address"
 CONF_DSN = "dsn"
 
 # Timings (seconds)

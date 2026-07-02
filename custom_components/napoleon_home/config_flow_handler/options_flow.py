@@ -29,6 +29,7 @@ from custom_components.napoleon_home.config_flow_handler.schemas import get_opti
 from custom_components.napoleon_home.const import (
     AYLA_REGIONS,
     CONF_ACCESS_TOKEN,
+    CONF_BT_MAC,
     CONF_DEVICES,
     CONF_DSN,
     CONF_LOCAL_KEY,
@@ -129,10 +130,9 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "unknown"
             else:
                 configured_dsns = {
-                    d[CONF_DSN]
+                    dsn
                     for domain_entry in self.hass.config_entries.async_entries(DOMAIN)
-                    for d in domain_entry.data.get(CONF_DEVICES, {}).values()
-                    if d.get(CONF_DSN)
+                    for dsn in domain_entry.data.get(CONF_DEVICES, {})
                 }
                 available: list[tuple[str, str, str]] = [
                     (dsn, name, mac) for dsn, name, mac in all_devices if dsn not in configured_dsns and mac
@@ -233,8 +233,8 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
         entry = self.config_entry
         updated_devices = {
             **entry.data.get(CONF_DEVICES, {}),
-            mac: {
-                CONF_DSN: dsn,
+            dsn: {
+                CONF_BT_MAC: mac,
                 CONF_LOCAL_KEY: local_key,
                 CONF_LOCAL_KEY_ID: local_key_id,
                 "name": name,
