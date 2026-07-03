@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from custom_components.napoleon_home.const import PARALLEL_UPDATES as PARALLEL_UPDATES
 
 from .battery import NapoleonHomeBatterySensor, build_entity_descriptions as build_battery_descriptions
 from .firmware import ENTITY_DESCRIPTIONS as FIRMWARE_DESCRIPTIONS, NapoleonHomeFirmwareVersionSensor
+from .fuel_type import NapoleonHomeFuelTypeSensor, build_entity_descriptions as build_fuel_type_descriptions
 from .probe_temp import NapoleonHomeProbeTempSensor, build_entity_descriptions as build_probe_temp_descriptions
 from .tank_weight import (
     NapoleonHomeTankDebugSensor,
     NapoleonHomeTankWeightSensor,
     build_debug_entity_descriptions,
     build_entity_descriptions as build_tank_weight_descriptions,
+    build_gas_tank_name_entity_descriptions,
 )
 
 if TYPE_CHECKING:
+    from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
     from custom_components.napoleon_home.data import NapoleonHomeConfigEntry
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -59,19 +63,41 @@ async def async_setup_entry(
         )
         async_add_entities(
             (
-                NapoleonHomeTankWeightSensor(
-                    coordinator=coordinator,
-                    entity_description=entity_description,
-                )
-                for entity_description in build_tank_weight_descriptions(profile)
-            ),
-        )
-        async_add_entities(
-            (
                 NapoleonHomeTankDebugSensor(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in build_debug_entity_descriptions(profile)
+                for entity_description in build_debug_entity_descriptions()
             ),
         )
+        async_add_entities(
+            (
+                NapoleonHomeFuelTypeSensor(
+                    coordinator=coordinator,
+                    entity_description=entity_description,
+                )
+                for entity_description in build_fuel_type_descriptions(profile)
+            ),
+        )
+        coordinator.async_add_gas_tank_listener(
+            _make_gas_tank_sensor_adder(coordinator, async_add_entities),
+        )
+
+
+def _make_gas_tank_sensor_adder(
+    coordinator: NapoleonHomeDataUpdateCoordinator,
+    async_add_entities: AddConfigEntryEntitiesCallback,
+) -> Callable[[], None]:
+    """Return a callback that adds tank weight and gas tank name sensors."""
+
+    def _add_entities() -> None:
+        async_add_entities(
+            NapoleonHomeTankWeightSensor(coordinator=coordinator, entity_description=entity_description)
+            for entity_description in build_tank_weight_descriptions()
+        )
+        async_add_entities(
+            NapoleonHomeTankDebugSensor(coordinator=coordinator, entity_description=entity_description)
+            for entity_description in build_gas_tank_name_entity_descriptions()
+        )
+
+    return _add_entities

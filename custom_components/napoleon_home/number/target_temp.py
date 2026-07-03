@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
 from homeassistant.const import UnitOfTemperature
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
@@ -73,18 +74,31 @@ class NapoleonHomeTargetTempNumber(NumberEntity, NapoleonHomeEntity):
 
     @property
     def native_min_value(self) -> float:
-        """Return the minimum settable temperature in the current unit."""
-        return 40.0 if self.coordinator.data.tunit == 0 else 100.0
+        """Return the minimum settable temperature in the current unit (40-380 °C range)."""
+        if self.coordinator.data.tunit == 1:
+            return TemperatureConverter.convert(40.0, UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT)
+        return 40.0
 
     @property
     def native_max_value(self) -> float:
-        """Return the maximum settable temperature in the current unit."""
-        return 380.0 if self.coordinator.data.tunit == 0 else 720.0
+        """Return the maximum settable temperature in the current unit (40-380 °C range)."""
+        if self.coordinator.data.tunit == 1:
+            return TemperatureConverter.convert(380.0, UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT)
+        return 380.0
 
     @property
     def native_value(self) -> float | None:
-        """Return the current target temperature, or None if not yet received."""
-        return self.coordinator.data.target_temps.get(self.entity_description.probe_id)
+        """Return the current target temperature, or None if not yet received.
+
+        The grill always reports target temperatures in Celsius; convert to
+        Fahrenheit when that's the grill's configured display unit.
+        """
+        temp_c = self.coordinator.data.target_temps.get(self.entity_description.probe_id)
+        if temp_c is None:
+            return None
+        if self.coordinator.data.tunit == 1:
+            return TemperatureConverter.convert(temp_c, UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT)
+        return temp_c
 
     @property
     def available(self) -> bool:
@@ -109,9 +123,15 @@ class NapoleonHomeTargetTempNumber(NumberEntity, NapoleonHomeEntity):
         return "mdi:thermometer-probe" if self.available else "mdi:thermometer-probe-off"
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the target temperature for this probe on the grill."""
+        """Set the target temperature for this probe on the grill.
+
+        ``value`` arrives in the currently displayed unit (°C or °F per
+        TUNIT); the grill always accepts target temperatures in Celsius.
+        """
         channel = next(p for p in self.coordinator.profile.probes if p.id == self.entity_description.probe_id)
         spec = channel.target
         if spec is None:
             return
+        if self.coordinator.data.tunit == 1:
+            value = TemperatureConverter.convert(value, UnitOfTemperature.FAHRENHEIT, UnitOfTemperature.CELSIUS)
         await self.coordinator.async_set_property(spec.name, spec.type_code, value)

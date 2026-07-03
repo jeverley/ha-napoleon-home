@@ -20,6 +20,7 @@ See _handover/CLAUDE.md — Protocol section.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import contextlib
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -39,8 +40,15 @@ from custom_components.napoleon_home.const import (
     MAX_CONNECT_FAILURES,
     POLL_PROPERTY_DELAY_S,
     PROP_BSMODE,
+    PROP_DTYPE,
     PROP_TYPE_BOOL,
 )
+
+# NOTE: gas_tank_configured is Prestige-specific (DTYPE encoding). This mixin
+# is nominally profile-generic (gated on has_gas_tank), but only Prestige is
+# wired end-to-end so far — revisit this import if another profile grows a
+# gas tank with a different DTYPE-like encoding.
+from custom_components.napoleon_home.device_profiles.prestige import gas_tank_configured
 from homeassistant.components.bluetooth import (
     BluetoothChange,
     BluetoothScanningMode,
@@ -115,6 +123,8 @@ class NapoleonHomeBLEMixin:
         self._stopping: bool = False
         self._circuit_open: bool = False
         self._bsmode_desired: int = 1
+        self._gas_tank_listeners: list[Callable[[], None]] = []
+        self._gas_tank_added: bool = False
 
     # Connection state
 
@@ -412,6 +422,8 @@ class NapoleonHomeBLEMixin:
         if name is not None and value is not None:
             LOGGER.debug("Napoleon Home %s: gpr %s=%r", self._mac, name, value)
             self.data.update_from_property(name, value)
+            if name == PROP_DTYPE:
+                self._resolve_gas_tank_listeners()
             self.async_set_updated_data(self.data)
 
     def _handle_odp(self, msg: dict[str, Any]) -> None:
@@ -443,6 +455,8 @@ class NapoleonHomeBLEMixin:
                 return
             LOGGER.debug("Napoleon Home %s: push %s=%r (seq=%d)", self._mac, name, value, seq)
             self.data.update_from_property(name, value)
+            if name == PROP_DTYPE:
+                self._resolve_gas_tank_listeners()
             self.async_set_updated_data(self.data)
 
     def _handle_opr(self, msg: dict[str, Any]) -> None:
@@ -538,6 +552,42 @@ class NapoleonHomeBLEMixin:
         """
         spec = self.profile.properties[concept]
         await self.async_set_property(spec.name, spec.type_code, value)
+
+    def async_add_gas_tank_listener(self, add_entities: Callable[[], None]) -> None:
+        """
+        Register a callback to run once this grill resolves to a portable propane tank.
+
+        Tank entities (weight, calibration, unit, tank name) can only legitimately
+        exist for a propane installation, and DTYPE — the property that tells us
+        that — arrives asynchronously after platform setup, not before it. Rather
+        than creating those entities unconditionally and hiding them via
+        ``available``, platforms register a callback here that creates them the
+        first time DTYPE resolves to propane.
+
+        Calls back immediately if DTYPE has already resolved to propane (e.g. it
+        arrived before this platform finished setup). Never fires for profiles
+        without a gas tank, or once DTYPE resolves to a fixed natural-gas
+        installation — those grills never get tank entities created.
+
+        Args:
+            add_entities: Called with no arguments once DTYPE resolves to propane.
+
+        """
+        if not self.profile.capabilities.has_gas_tank:
+            return
+        if gas_tank_configured(self.data.dtype):
+            add_entities()
+            return
+        self._gas_tank_listeners.append(add_entities)
+
+    def _resolve_gas_tank_listeners(self) -> None:
+        """Fire and clear any pending gas-tank listeners once DTYPE resolves to propane."""
+        if self._gas_tank_added or not gas_tank_configured(self.data.dtype):
+            return
+        self._gas_tank_added = True
+        listeners, self._gas_tank_listeners = self._gas_tank_listeners, []
+        for add_entities in listeners:
+            add_entities()
 
     async def async_set_bsmode(self, value: int) -> None:
         """Write BSMODE and persist as the desired value so re-assert logic uses it."""

@@ -10,6 +10,8 @@ and entity descriptions.
 
 from __future__ import annotations
 
+import enum
+
 from custom_components.napoleon_home.const import (
     AYLA_OEM_MODEL_PRESTIGE,
     AYLA_OEM_MODEL_PRESTIGE_EU,
@@ -19,6 +21,7 @@ from custom_components.napoleon_home.const import (
     PROP_BSMODE,
     PROP_BT_LVL,
     PROP_CNTRY,
+    PROP_DTYPE,
     PROP_EMTY_TNK_W,
     PROP_F_TNKWT,
     PROP_GS_TNK_NAME,
@@ -43,6 +46,49 @@ from custom_components.napoleon_home.device_profiles.models import (
     ProbeChannel,
     PropertySpec,
 )
+
+
+class FuelType(enum.IntEnum):
+    """Prestige-specific fuel type and model size, from the DTYPE property.
+
+    DTYPE packs two independent selectors into a single data point: fuel
+    type (propane vs natural gas) and grill model size (500 vs 665). Natural
+    gas is plumbed to a fixed line and has no portable tank to weigh. Values
+    and their meaning are specific to Prestige — other profiles with a
+    DTYPE-like property are not guaranteed to use the same encoding.
+    """
+
+    PROPANE_500 = 1
+    PROPANE_665 = 2
+    NATURAL_GAS_500 = 3
+    NATURAL_GAS_665 = 4
+
+    @property
+    def is_propane(self) -> bool:
+        """Return True if this fuel type has a portable tank to weigh."""
+        return self <= FuelType.PROPANE_665
+
+    @property
+    def model_size(self) -> int:
+        """Return the grill model size encoded alongside fuel type (500 or 665)."""
+        return 500 if self in (FuelType.PROPANE_500, FuelType.NATURAL_GAS_500) else 665
+
+
+def gas_tank_configured(dtype: int | None) -> bool:
+    """Return True if a Prestige grill with this raw DTYPE value has a portable propane tank.
+
+    Returns False for None (not yet polled) or any value outside the known
+    presets — better for tank entities to stay unavailable briefly than to
+    assume propane and risk showing a natural gas installation an incorrect
+    reading.
+    """
+    if dtype is None:
+        return False
+    try:
+        return FuelType(dtype).is_propane
+    except ValueError:
+        return False
+
 
 _STAT = PropertySpec(name=PROP_PRB_STAT, type_code=PROP_TYPE_INT)
 
@@ -105,6 +151,7 @@ PRESTIGE_PROFILE = DeviceProfile(
         "auto_shutoff": PropertySpec(name=PROP_AUTO_T_OUT, type_code=PROP_TYPE_INT),
         "power_off": PropertySpec(name=PROP_TOFF, type_code=PROP_TYPE_BOOL, pollable=False),
         "gas_unit": PropertySpec(name=PROP_GS_UNT, type_code=PROP_TYPE_INT),
+        "fuel_type": PropertySpec(name=PROP_DTYPE, type_code=PROP_TYPE_INT),
         "region": PropertySpec(name=PROP_REGN, type_code=PROP_TYPE_STRING),
         "country": PropertySpec(name=PROP_CNTRY, type_code=PROP_TYPE_STRING),
         "gas_tank_name": PropertySpec(name=PROP_GS_TNK_NAME, type_code=PROP_TYPE_STRING),

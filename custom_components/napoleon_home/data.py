@@ -26,6 +26,7 @@ from custom_components.napoleon_home.const import (
     PROP_BSMODE,
     PROP_BT_LVL,
     PROP_CNTRY,
+    PROP_DTYPE,
     PROP_EMTY_TNK_W,
     PROP_F_TNKWT,
     PROP_GS_TNK_NAME,
@@ -39,6 +40,8 @@ from custom_components.napoleon_home.const import (
     PROP_TUNIT,
     PROP_VERSION,
 )
+from homeassistant.const import UnitOfMass
+from homeassistant.util.unit_conversion import MassConverter
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
@@ -56,26 +59,38 @@ class NapoleonHomeGrillState:
     - Odp (unsolicited push): state changes the grill sends proactively.
     - gpr (response to Gpr poll): current value for a specific property.
 
-    Temperature values are in the unit indicated by tunit (0=°C, 1=°F).
+    Probe temperatures are always reported by the grill in Celsius, regardless
+    of tunit — entities convert to Fahrenheit for display when tunit=1.
 
     Attributes:
-        tunit: Temperature unit — 0 = Celsius, 1 = Fahrenheit.
+        tunit: Temperature unit — 0 = Celsius, 1 = Fahrenheit. Selects the
+            grill's own display unit and the unit entities convert to/from;
+            probe_temps/target_temps below are always stored in Celsius.
         bsmode: Battery/screen saver mode enabled state.
         lcd_off: Knob backlights off state — True = off.
         brt_lvl: Display brightness level (1=low, 3=mid, 5=high). None if not yet polled.
         auto_t_out: Auto shutoff timeout in hours (1–24). None if not yet polled.
         gs_unt: Gas unit — 0 = kg, 1 = lbs.
-        probe_temps: Current probe temperatures keyed by probe number (1–4). None = not yet received.
+        probe_temps: Current probe temperatures in Celsius, keyed by probe number
+            (1–4). None = not yet received.
         probe_stat: Probe connected state bitmask (bit 0 = probe 1, bit 3 = probe 4).
-        target_temps: Target temperatures keyed by probe number (1–4). None = not yet received.
+        target_temps: Target temperatures in Celsius, keyed by probe number (1–4).
+            None = not yet received.
         battery_level: Battery level percentage (BT_LVL 0-5 × 20). None if not yet polled.
         battery_low: True if the battery low alert is active.
-        tank_weight: Current gas tank weight in gs_unt units. None if not configured or not yet polled.
-        empty_tank_weight: Empty tank calibration weight in gs_unt units. None if not yet polled.
-        full_tank_weight: Full tank calibration weight in gs_unt units. None if not yet polled.
+        tank_weight: Current gas tank weight, in kilograms (the grill always reports
+            TNK_WT in grams). None if there's no valid reading (grill reports a
+            negative value) or not yet polled.
+        empty_tank_weight: Empty tank calibration weight, in kilograms (the grill
+            always reports EMTY_TNK_W in grams). None if not yet polled.
+        full_tank_weight: Full tank calibration weight, in kilograms (the grill
+            always reports F_TNKWT in grams). None if not yet polled.
         region: Grill region code. None if not yet polled.
         country: Grill country code. None if not yet polled.
         gas_tank_name: Configured gas tank name. None if not yet polled.
+        dtype: Raw DTYPE value as reported by the grill. None if not yet
+            polled. Interpretation is profile-specific — see e.g.
+            device_profiles.prestige.FuelType for what this means on Prestige.
         firmware_version: Grill firmware version string. None if not yet polled.
 
     """
@@ -87,8 +102,9 @@ class NapoleonHomeGrillState:
     brt_lvl: int | None = None
     auto_t_out: int | None = None
     gs_unt: int = 0
+    dtype: int | None = None
 
-    # Probe temperatures (°C or °F per tunit; None = not yet received)
+    # Probe temperatures, always Celsius (None = not yet received)
     probe_temps: dict[int, float | None] = field(default_factory=lambda: {1: None, 2: None, 3: None, 4: None})
 
     # Probe connected state bitmask (bit 0 = probe 1, …, bit 3 = probe 4)
@@ -131,7 +147,7 @@ class NapoleonHomeGrillState:
             probe: Probe number (1–4).
 
         Returns:
-            The temperature in the unit indicated by tunit, or None.
+            The temperature in Celsius, or None.
 
         """
         if not self.probe_connected(probe):
@@ -163,6 +179,8 @@ class NapoleonHomeGrillState:
             self.auto_t_out = int(value)
         elif name == PROP_GS_UNT:
             self.gs_unt = int(value)
+        elif name == PROP_DTYPE:
+            self.dtype = int(value)
         elif name == PROP_REGN:
             self.region = str(value) if value != "" else None
         elif name == PROP_CNTRY:
@@ -176,12 +194,17 @@ class NapoleonHomeGrillState:
         elif name == PROP_BATTERY_LOW_ALERT:
             self.battery_low = bool(value)
         elif name == PROP_TNK_WT:
-            # -14400 is the sentinel value indicating the gas tank has not been configured.
-            self.tank_weight = float(value) if value != -14400 else None
+            self.tank_weight = (
+                MassConverter.convert(float(value), UnitOfMass.GRAMS, UnitOfMass.KILOGRAMS) if value >= 0 else None
+            )
         elif name == PROP_EMTY_TNK_W:
-            self.empty_tank_weight = float(value) if value != "" else None
+            self.empty_tank_weight = (
+                MassConverter.convert(float(value), UnitOfMass.GRAMS, UnitOfMass.KILOGRAMS) if value != "" else None
+            )
         elif name == PROP_F_TNKWT:
-            self.full_tank_weight = float(value) if value != "" else None
+            self.full_tank_weight = (
+                MassConverter.convert(float(value), UnitOfMass.GRAMS, UnitOfMass.KILOGRAMS) if value != "" else None
+            )
         elif name == PROP_VERSION:
             self.firmware_version = str(value)
         elif name in PROP_PRB_TEMPS:

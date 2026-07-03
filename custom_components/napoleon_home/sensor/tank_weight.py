@@ -9,18 +9,20 @@ from typing import TYPE_CHECKING
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
 from homeassistant.const import EntityCategory, UnitOfMass
+from homeassistant.util.unit_conversion import MassConverter
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
     from custom_components.napoleon_home.data import NapoleonHomeGrillState
-    from custom_components.napoleon_home.device_profiles import DeviceProfile
     from homeassistant.helpers.typing import StateType
 
 
-def build_entity_descriptions(profile: DeviceProfile) -> tuple[SensorEntityDescription, ...]:
-    """Build the tank weight sensor description, or none for models with no gas tank."""
-    if not profile.capabilities.has_gas_tank:
-        return ()
+def build_entity_descriptions() -> tuple[SensorEntityDescription, ...]:
+    """Build the tank weight sensor description.
+
+    Only ever called once a grill resolves to a portable propane tank — see
+    ``NapoleonHomeDataUpdateCoordinator.async_add_gas_tank_listener``.
+    """
     return (
         SensorEntityDescription(
             key="tank_weight",
@@ -39,13 +41,9 @@ class NapoleonHomeTankDebugSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[NapoleonHomeGrillState], StateType] = lambda _: None
 
 
-def build_debug_entity_descriptions(profile: DeviceProfile) -> tuple[NapoleonHomeTankDebugSensorEntityDescription, ...]:
-    """Build debug metadata sensor descriptions.
-
-    Region and country are general grill metadata, always included. Gas tank
-    name only applies to models with a gas tank.
-    """
-    descriptions = [
+def build_debug_entity_descriptions() -> tuple[NapoleonHomeTankDebugSensorEntityDescription, ...]:
+    """Build region/country debug metadata sensor descriptions (always present)."""
+    return (
         NapoleonHomeTankDebugSensorEntityDescription(
             key="region",
             translation_key="region",
@@ -62,19 +60,25 @@ def build_debug_entity_descriptions(profile: DeviceProfile) -> tuple[NapoleonHom
             icon="mdi:flag",
             value_fn=lambda s: s.country,
         ),
-    ]
-    if profile.capabilities.has_gas_tank:
-        descriptions.append(
-            NapoleonHomeTankDebugSensorEntityDescription(
-                key="gas_tank_name",
-                translation_key="gas_tank_name",
-                entity_category=EntityCategory.DIAGNOSTIC,
-                entity_registry_enabled_default=False,
-                icon="mdi:propane-tank",
-                value_fn=lambda s: s.gas_tank_name,
-            )
-        )
-    return tuple(descriptions)
+    )
+
+
+def build_gas_tank_name_entity_descriptions() -> tuple[NapoleonHomeTankDebugSensorEntityDescription, ...]:
+    """Build the gas tank name debug sensor description.
+
+    Only ever called once a grill resolves to a portable propane tank — see
+    ``NapoleonHomeDataUpdateCoordinator.async_add_gas_tank_listener``.
+    """
+    return (
+        NapoleonHomeTankDebugSensorEntityDescription(
+            key="gas_tank_name",
+            translation_key="gas_tank_name",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            entity_registry_enabled_default=False,
+            icon="mdi:propane-tank",
+            value_fn=lambda s: s.gas_tank_name,
+        ),
+    )
 
 
 class NapoleonHomeTankWeightSensor(SensorEntity, NapoleonHomeEntity):
@@ -95,8 +99,13 @@ class NapoleonHomeTankWeightSensor(SensorEntity, NapoleonHomeEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return current tank weight."""
-        return self.coordinator.data.tank_weight
+        """Return current tank weight, converted to lbs if that's the grill's configured unit."""
+        weight = self.coordinator.data.tank_weight
+        if weight is None:
+            return None
+        if self.coordinator.data.gs_unt == 1:
+            return round(MassConverter.convert(weight, UnitOfMass.KILOGRAMS, UnitOfMass.POUNDS), 1)
+        return weight
 
 
 class NapoleonHomeTankDebugSensor(SensorEntity, NapoleonHomeEntity):

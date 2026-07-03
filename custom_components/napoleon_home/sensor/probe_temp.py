@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription, SensorStateClass
 from homeassistant.const import UnitOfTemperature
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
@@ -80,8 +81,17 @@ class NapoleonHomeProbeTempSensor(SensorEntity, NapoleonHomeEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the current probe temperature, or None if unavailable."""
-        return self.coordinator.data.probe_temp(self.entity_description.probe_id)
+        """Return the current probe temperature, or None if unavailable.
+
+        The grill always reports probe temperatures in Celsius; convert to
+        Fahrenheit when that's the grill's configured display unit.
+        """
+        temp_c = self.coordinator.data.probe_temp(self.entity_description.probe_id)
+        if temp_c is None:
+            return None
+        if self.coordinator.data.tunit == 1:
+            return TemperatureConverter.convert(temp_c, UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT)
+        return temp_c
 
     @property
     def _always_available(self) -> bool:

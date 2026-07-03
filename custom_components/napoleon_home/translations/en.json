@@ -121,6 +121,9 @@
       },
       "status": {
         "name": "Status"
+      },
+      "tank_calibrated": {
+        "name": "Tank calibrated"
       }
     },
     "sensor": {
@@ -153,6 +156,13 @@
       },
       "firmware": {
         "name": "Firmware"
+      },
+      "fuel_type": {
+        "name": "Fuel type",
+        "state": {
+          "propane": "Propane",
+          "natural_gas": "Natural gas"
+        }
       }
     },
     "light": {
@@ -174,6 +184,9 @@
           "kg": "Kilograms",
           "lbs": "Pounds"
         }
+      },
+      "device_model": {
+        "name": "Device model"
       },
       "display_brightness": {
         "name": "Display brightness",

@@ -16,6 +16,23 @@ lighting (``ID_MTN_SNSR``/``MTN_SNSR_TIME``) are flagged via
 ``DeviceCapabilities`` but have no property/entity wiring yet — building
 those out is explicitly out of scope until hardware access confirms BLE
 support (see the multi-model framework plan).
+
+``DTYPE`` encoding differs from Prestige: Prestige Pro has three model sizes
+rather than two, and fuel type/size are not interleaved the way Prestige's
+are — values 1-3 are propane (500/665/825) and 4-6 are the same three sizes
+on natural gas::
+
+    1 = Propane 500       4 = Natural Gas 500
+    2 = Propane 665       5 = Natural Gas 665
+    3 = Propane 825       6 = Natural Gas 825
+
+``device_profiles.prestige.gas_tank_configured`` (used by the coordinator's
+gas-tank entity gating) decodes DTYPE using Prestige's own 4-value enum and
+would misclassify these values — e.g. this profile's ``3`` (Propane 825)
+reads as Prestige's ``NATURAL_GAS_500``. Not yet an active bug: this profile
+isn't wired end-to-end (``data.py`` doesn't recognize this model's tank
+property names either), but fix this classification before relying on
+gas-tank gating for Prestige Pro.
 """
 
 from __future__ import annotations
@@ -106,6 +123,7 @@ PRESTIGE_PRO_PROFILE = DeviceProfile(
         "auto_shutoff": PropertySpec(name="AUTO_T_OUT", type_code=PROP_TYPE_INT),
         "power_off": PropertySpec(name="PWR_CNTRL", type_code=PROP_TYPE_BOOL, pollable=False),
         "gas_unit": PropertySpec(name="WEIGHT_UNIT", type_code=PROP_TYPE_INT),
+        "fuel_type": PropertySpec(name="DTYPE", type_code=PROP_TYPE_INT),
         "region": PropertySpec(name="REGN", type_code=PROP_TYPE_STRING),
         "country": PropertySpec(name="CNTRY", type_code=PROP_TYPE_STRING),
         "gas_tank_name": PropertySpec(name="GS_TNK_NAME", type_code=PROP_TYPE_STRING),

@@ -377,7 +377,8 @@ See `.github/instructions/blueprint.config_flow.instructions.md` for comprehensi
 
 - `PRB_TMP_*` = `4095.0` when probe not connected; use `PRB_STAT` bitmask for `available` (more reliable than value sentinel)
 - `PRB_STAT` bitmask: bit 0 = probe 1, bit 1 = probe 2, bit 2 = probe 3, bit 3 = probe 4
-- `TNK_WT` = `-14400` when gas tank not configured
+- `TNK_WT`: any negative value means no valid reading — not a fixed sentinel; the exact negative value depends on the unit's calibration constants (e.g. `-14400` has been observed but isn't a designed flag value)
+- `DTYPE`: fuel type, device-reported — `1`/`2` = propane presets (portable tank present), `3`/`4` = natural gas presets (fixed line, no tank to weigh). Tank-related entities (weight, calibration, unit, tank name, calibrated) are only _created_ once DTYPE first resolves to a propane preset — see `NapoleonHomeDataUpdateCoordinator.async_add_gas_tank_listener` — not merely marked unavailable, since fuel type is factory-set and never changes at runtime. `tank_calibrated` additionally reflects `TNK_WT >= 0` as its own on/off state once created
 - `PRB_TMP_FOUR` quirk: Prestige IF2 has 3 physical probe sockets; probe 4 reads 0.0 at ambient while physical probes read ~24 °C — may be an internal grill thermistor that only reports values when the burner heats the hood above ambient (unconfirmed)
 
 **GATT readable characteristics (service `0000fe28`):**
@@ -434,14 +435,15 @@ Notes:
 
 Gas tank:
 
-| Property      | Meaning                                     |
-| ------------- | ------------------------------------------- |
-| `GS_UNT`      | Gas unit (0=kg, 1=lbs)                      |
-| `GS_TNK_NAME` | Gas tank name                               |
-| `TNK_WT`      | Tank weight (-14400 = not configured)       |
-| `EMTY_TNK_W`  | Empty tank weight                           |
-| `F_TNKWT`     | Full tank weight                            |
-| `NTC_VLU`     | NTC thermistor reading (tank weight sensor) |
+| Property      | Meaning                                                          |
+| ------------- | ---------------------------------------------------------------- |
+| `GS_UNT`      | Gas unit (0=kg, 1=lbs)                                           |
+| `GS_TNK_NAME` | Gas tank name                                                    |
+| `TNK_WT`      | Tank weight (negative = no valid reading)                        |
+| `EMTY_TNK_W`  | Empty tank weight                                                |
+| `F_TNKWT`     | Full tank weight                                                 |
+| `NTC_VLU`     | NTC thermistor reading (tank weight sensor)                      |
+| `DTYPE`       | Fuel type (<=2 propane, >2 natural gas — no tank on natural gas) |
 
 Probe / cook names:
 
