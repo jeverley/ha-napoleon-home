@@ -508,6 +508,11 @@ class NapoleonHomeBLEMixin:
         """
         Send a ``Gpr`` poll request for every property in the active DeviceProfile.
 
+        Includes each property's type code (``t``) in the request — some
+        properties are rejected by the grill with a "required field missing"
+        or "general failure" status if ``t`` is omitted, even though most
+        properties tolerate its absence.
+
         Paces requests with a small delay between each write. Firing writes
         back-to-back with no gap can exhaust the BLE stack's/proxy's buffering
         under weak signal, surfacing as a GATT "Insufficient resources" error
@@ -516,10 +521,10 @@ class NapoleonHomeBLEMixin:
 
         Called by ``_async_update_data`` on each coordinator refresh cycle.
         """
-        for index, name in enumerate(self.profile.poll_properties):
+        for index, spec in enumerate(self.profile.poll_properties):
             if index > 0:
                 await asyncio.sleep(POLL_PROPERTY_DELAY_S)
-            await self._send_msg("Gpr", {"n": name})
+            await self._send_msg("Gpr", {"n": spec.name, "t": spec.type_code})
 
     async def async_set_property(self, name: str, type_code: int, value: Any) -> None:
         """

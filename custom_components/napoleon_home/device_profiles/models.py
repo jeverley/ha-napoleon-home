@@ -148,11 +148,13 @@ class DeviceProfile:
     properties: Mapping[str, PropertySpec]
 
     @property
-    def poll_properties(self) -> list[str]:
-        """Return the flattened list of wire property names to ``Gpr``-poll every cycle."""
-        names: list[str] = [spec.name for spec in self.properties.values() if spec.pollable]
+    def poll_properties(self) -> list[PropertySpec]:
+        """Return the flattened list of properties to ``Gpr``-poll every cycle."""
+        specs: list[PropertySpec] = [spec for spec in self.properties.values() if spec.pollable]
+        names = {spec.name for spec in specs}
         for probe in self.probes:
             for spec in (probe.temp, probe.target, probe.stat_property):
                 if spec is not None and spec.name not in names:
-                    names.append(spec.name)
-        return names
+                    specs.append(spec)
+                    names.add(spec.name)
+        return specs
