@@ -5,46 +5,59 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from custom_components.napoleon_home.const import PROP_EMTY_TNK_W, PROP_F_TNKWT, PROP_TYPE_INT
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
 from homeassistant.const import EntityCategory, UnitOfMass
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
+    from custom_components.napoleon_home.device_profiles import DeviceProfile
 
 
 @dataclass(frozen=True, kw_only=True)
 class NapoleonHomeTankCalibrationNumberEntityDescription(NumberEntityDescription):
-    """Entity description for tank calibration numbers."""
+    """Entity description for tank calibration numbers.
 
-    property_name: str
+    Attributes:
+        concept: The profile concept key backing this entity (``"empty_tank_weight"``
+            or ``"full_tank_weight"``) — see the active DeviceProfile's
+            ``properties`` map.
+
+    """
+
+    concept: str = ""
 
 
-ENTITY_DESCRIPTIONS: tuple[NapoleonHomeTankCalibrationNumberEntityDescription, ...] = (
-    NapoleonHomeTankCalibrationNumberEntityDescription(
-        key="empty_tank_weight",
-        translation_key="empty_tank_weight",
-        icon="mdi:propane-tank-outline",
-        entity_category=EntityCategory.CONFIG,
-        mode=NumberMode.BOX,
-        native_min_value=0,
-        native_max_value=200,
-        native_step=1,
-        property_name=PROP_EMTY_TNK_W,
-    ),
-    NapoleonHomeTankCalibrationNumberEntityDescription(
-        key="full_tank_weight",
-        translation_key="full_tank_weight",
-        icon="mdi:propane-tank",
-        entity_category=EntityCategory.CONFIG,
-        mode=NumberMode.BOX,
-        native_min_value=0,
-        native_max_value=200,
-        native_step=1,
-        property_name=PROP_F_TNKWT,
-    ),
-)
+def build_entity_descriptions(
+    profile: DeviceProfile,
+) -> tuple[NapoleonHomeTankCalibrationNumberEntityDescription, ...]:
+    """Build tank calibration number descriptions, or none for models with no gas tank."""
+    if not profile.capabilities.has_gas_tank:
+        return ()
+    return (
+        NapoleonHomeTankCalibrationNumberEntityDescription(
+            key="empty_tank_weight",
+            translation_key="empty_tank_weight",
+            icon="mdi:propane-tank-outline",
+            entity_category=EntityCategory.CONFIG,
+            mode=NumberMode.BOX,
+            native_min_value=0,
+            native_max_value=200,
+            native_step=1,
+            concept="empty_tank_weight",
+        ),
+        NapoleonHomeTankCalibrationNumberEntityDescription(
+            key="full_tank_weight",
+            translation_key="full_tank_weight",
+            icon="mdi:propane-tank",
+            entity_category=EntityCategory.CONFIG,
+            mode=NumberMode.BOX,
+            native_min_value=0,
+            native_max_value=200,
+            native_step=1,
+            concept="full_tank_weight",
+        ),
+    )
 
 
 class NapoleonHomeTankCalibrationNumber(NumberEntity, NapoleonHomeEntity):
@@ -68,15 +81,15 @@ class NapoleonHomeTankCalibrationNumber(NumberEntity, NapoleonHomeEntity):
     @property
     def native_value(self) -> float | None:
         """Return current calibration value."""
-        if self.entity_description.property_name == PROP_EMTY_TNK_W:
+        if self.entity_description.concept == "empty_tank_weight":
             return self.coordinator.data.empty_tank_weight
         return self.coordinator.data.full_tank_weight
 
     async def async_set_native_value(self, value: float) -> None:
         """Set calibration value on the grill."""
         int_value = int(value)
-        await self.coordinator.async_set_property(self.entity_description.property_name, PROP_TYPE_INT, int_value)
-        if self.entity_description.property_name == PROP_EMTY_TNK_W:
+        await self.coordinator.async_set_property_by_concept(self.entity_description.concept, int_value)
+        if self.entity_description.concept == "empty_tank_weight":
             self.coordinator.data.empty_tank_weight = float(int_value)
         else:
             self.coordinator.data.full_tank_weight = float(int_value)

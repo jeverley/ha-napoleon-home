@@ -4,21 +4,26 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from custom_components.napoleon_home.const import PROP_LCD_OFF, PROP_TYPE_BOOL
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.light import LightEntity, LightEntityDescription
 from homeassistant.components.light.const import ColorMode
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
+    from custom_components.napoleon_home.device_profiles import DeviceProfile
 
-ENTITY_DESCRIPTIONS: tuple[LightEntityDescription, ...] = (
-    LightEntityDescription(
-        key="knob_lights",
-        translation_key="knob_lights",
-        icon="mdi:knob",
-    ),
-)
+
+def build_entity_descriptions(profile: DeviceProfile) -> tuple[LightEntityDescription, ...]:
+    """Build the knob backlight description, or none for models without one."""
+    if not profile.capabilities.has_knob_backlight:
+        return ()
+    return (
+        LightEntityDescription(
+            key="knob_lights",
+            translation_key="knob_lights",
+            icon="mdi:knob",
+        ),
+    )
 
 
 class NapoleonHomeBacklightLight(LightEntity, NapoleonHomeEntity):
@@ -47,12 +52,12 @@ class NapoleonHomeBacklightLight(LightEntity, NapoleonHomeEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the backlights on."""
-        await self.coordinator.async_set_property(PROP_LCD_OFF, PROP_TYPE_BOOL, 0)
+        await self.coordinator.async_set_property_by_concept("knob_backlight", 0)
         self.coordinator.data.lcd_off = False
         self.coordinator.async_set_updated_data(self.coordinator.data)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the backlights off (LCD_OFF = 1)."""
-        await self.coordinator.async_set_property(PROP_LCD_OFF, PROP_TYPE_BOOL, 1)
+        await self.coordinator.async_set_property_by_concept("knob_backlight", 1)
         self.coordinator.data.lcd_off = True
         self.coordinator.async_set_updated_data(self.coordinator.data)

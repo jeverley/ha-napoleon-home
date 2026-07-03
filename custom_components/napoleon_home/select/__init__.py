@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from custom_components.napoleon_home.const import PARALLEL_UPDATES as PARALLEL_UPDATES
 
-from .brightness import ENTITY_DESCRIPTIONS as BRIGHTNESS_DESCRIPTIONS, NapoleonHomeDisplayBrightnessSelect
-from .tank_unit import ENTITY_DESCRIPTIONS as GAS_UNIT_DESCRIPTIONS, NapoleonHomeGasUnitSelect
+from .brightness import NapoleonHomeDisplayBrightnessSelect, build_entity_descriptions as build_brightness_descriptions
+from .tank_unit import NapoleonHomeGasUnitSelect, build_entity_descriptions as build_gas_unit_descriptions
 from .temperature_unit import ENTITY_DESCRIPTIONS as TEMP_UNIT_DESCRIPTIONS, NapoleonHomeTempUnitSelect
 
 if TYPE_CHECKING:
@@ -23,6 +23,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the select platform."""
     for coordinator in entry.runtime_data.values():
+        profile = coordinator.profile
         async_add_entities(
             (
                 NapoleonHomeTempUnitSelect(
@@ -38,7 +39,7 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in BRIGHTNESS_DESCRIPTIONS
+                for entity_description in build_brightness_descriptions(profile)
             ),
         )
         async_add_entities(
@@ -47,6 +48,6 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in GAS_UNIT_DESCRIPTIONS
+                for entity_description in build_gas_unit_descriptions(profile)
             ),
         )

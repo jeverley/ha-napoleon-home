@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from custom_components.napoleon_home.const import PROP_TOFF, PROP_TYPE_BOOL
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 
@@ -33,5 +32,5 @@ class NapoleonHomePowerOffButton(ButtonEntity, NapoleonHomeEntity):
         super().__init__(coordinator, entity_description)
 
     async def async_press(self) -> None:
-        """Send the TOFF command to power off the grill."""
-        await self.coordinator.async_set_property(PROP_TOFF, PROP_TYPE_BOOL, 1)
+        """Send the power-off command to the grill."""
+        await self.coordinator.async_set_property_by_concept("power_off", 1)

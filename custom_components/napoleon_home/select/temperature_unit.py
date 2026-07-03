@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from custom_components.napoleon_home.const import PROP_TUNIT, PROP_TYPE_INT
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.select import SelectEntity, SelectEntityDescription
 from homeassistant.const import EntityCategory
@@ -46,6 +45,6 @@ class NapoleonHomeTempUnitSelect(SelectEntity, NapoleonHomeEntity):
     async def async_select_option(self, option: str) -> None:
         """Set the temperature unit on the grill."""
         value = _OPTIONS_INV[option]
-        await self.coordinator.async_set_property(PROP_TUNIT, PROP_TYPE_INT, value)
+        await self.coordinator.async_set_property_by_concept("temperature_unit", value)
         self.coordinator.data.tunit = value
         self.coordinator.async_set_updated_data(self.coordinator.data)

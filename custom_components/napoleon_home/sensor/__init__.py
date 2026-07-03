@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING
 
 from custom_components.napoleon_home.const import PARALLEL_UPDATES as PARALLEL_UPDATES
 
-from .battery import ENTITY_DESCRIPTIONS as BATTERY_DESCRIPTIONS, NapoleonHomeBatterySensor
+from .battery import NapoleonHomeBatterySensor, build_entity_descriptions as build_battery_descriptions
 from .firmware import ENTITY_DESCRIPTIONS as FIRMWARE_DESCRIPTIONS, NapoleonHomeFirmwareVersionSensor
-from .probe_temp import ENTITY_DESCRIPTIONS as PROBE_TEMP_DESCRIPTIONS, NapoleonHomeProbeTempSensor
+from .probe_temp import NapoleonHomeProbeTempSensor, build_entity_descriptions as build_probe_temp_descriptions
 from .tank_weight import (
-    DEBUG_ENTITY_DESCRIPTIONS as TANK_DEBUG_DESCRIPTIONS,
-    ENTITY_DESCRIPTIONS as TANK_WEIGHT_DESCRIPTIONS,
     NapoleonHomeTankDebugSensor,
     NapoleonHomeTankWeightSensor,
+    build_debug_entity_descriptions,
+    build_entity_descriptions as build_tank_weight_descriptions,
 )
 
 if TYPE_CHECKING:
@@ -29,13 +29,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up the sensor platform."""
     for coordinator in entry.runtime_data.values():
+        profile = coordinator.profile
         async_add_entities(
             (
                 NapoleonHomeProbeTempSensor(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in PROBE_TEMP_DESCRIPTIONS
+                for entity_description in build_probe_temp_descriptions(profile)
             ),
         )
         async_add_entities(
@@ -44,7 +45,7 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in BATTERY_DESCRIPTIONS
+                for entity_description in build_battery_descriptions(profile)
             ),
         )
         async_add_entities(
@@ -62,7 +63,7 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in TANK_WEIGHT_DESCRIPTIONS
+                for entity_description in build_tank_weight_descriptions(profile)
             ),
         )
         async_add_entities(
@@ -71,6 +72,6 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in TANK_DEBUG_DESCRIPTIONS
+                for entity_description in build_debug_entity_descriptions(profile)
             ),
         )

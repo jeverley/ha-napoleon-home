@@ -11,6 +11,7 @@ from homeassistant.const import UnitOfTemperature
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
+    from custom_components.napoleon_home.device_profiles import DeviceProfile
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -18,27 +19,31 @@ class NapoleonHomeProbeTempSensorEntityDescription(SensorEntityDescription):
     """
     Entity description for a Napoleon Home probe temperature sensor.
 
-    Extends ``SensorEntityDescription`` with a ``probe`` field so that a single
-    entity class can serve all four probe slots.
+    Extends ``SensorEntityDescription`` with a ``probe_id`` field so that a
+    single entity class can serve every probe channel a profile defines.
 
     Attributes:
-        probe: Probe number (1–4).
+        probe_id: Probe channel ID, matching a ``ProbeChannel.id`` on the
+            active DeviceProfile.
 
     """
 
-    probe: int = 0
+    probe_id: int = 0
 
 
-ENTITY_DESCRIPTIONS: tuple[NapoleonHomeProbeTempSensorEntityDescription, ...] = tuple(
-    NapoleonHomeProbeTempSensorEntityDescription(
-        key="grill" if probe == 4 else f"probe_{probe}",
-        translation_key="grill" if probe == 4 else f"probe_{probe}",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        probe=probe,
+def build_entity_descriptions(profile: DeviceProfile) -> tuple[NapoleonHomeProbeTempSensorEntityDescription, ...]:
+    """Build one temperature sensor description per readable probe channel on ``profile``."""
+    return tuple(
+        NapoleonHomeProbeTempSensorEntityDescription(
+            key="grill" if probe.is_grill_channel else f"probe_{probe.id}",
+            translation_key="grill" if probe.is_grill_channel else f"probe_{probe.id}",
+            device_class=SensorDeviceClass.TEMPERATURE,
+            state_class=SensorStateClass.MEASUREMENT,
+            probe_id=probe.id,
+        )
+        for probe in profile.probes
+        if probe.temp is not None
     )
-    for probe in range(1, 5)
-)
 
 
 class NapoleonHomeProbeTempSensor(SensorEntity, NapoleonHomeEntity):
@@ -63,7 +68,7 @@ class NapoleonHomeProbeTempSensor(SensorEntity, NapoleonHomeEntity):
 
         Args:
             coordinator: The BLE coordinator managing grill state.
-            entity_description: The entity description, including the probe number.
+            entity_description: The entity description, including the probe channel ID.
 
         """
         super().__init__(coordinator, entity_description)
@@ -76,24 +81,33 @@ class NapoleonHomeProbeTempSensor(SensorEntity, NapoleonHomeEntity):
     @property
     def native_value(self) -> float | None:
         """Return the current probe temperature, or None if unavailable."""
-        return self.coordinator.data.probe_temp(self.entity_description.probe)
+        return self.coordinator.data.probe_temp(self.entity_description.probe_id)
+
+    @property
+    def _always_available(self) -> bool:
+        """Return True if this channel has no connected-state bit (e.g. the grill's own probe slot)."""
+        channel = next(p for p in self.coordinator.profile.probes if p.id == self.entity_description.probe_id)
+        return channel.connected_bit is None
 
     @property
     def available(self) -> bool:
-        """Return availability for probes and grill temperature channels.
+        """Return availability for probe and always-on temperature channels.
 
-        Probe 1-3 sensors are unavailable when physically unplugged.
-        The grill temperature channel (probe slot 4 on this model) remains
-        available whenever BLE is authenticated.
+        Removable probes are unavailable when physically unplugged. Channels
+        with no connected-state bit (e.g. Prestige's probe slot 4, which
+        reports the grill's own temperature) remain available whenever BLE
+        is authenticated.
 
         """
-        if self.entity_description.probe == 4:
+        if self._always_available:
             return self.coordinator.authenticated
-        return self.coordinator.authenticated and self.coordinator.data.probe_connected(self.entity_description.probe)
+        return self.coordinator.authenticated and self.coordinator.data.probe_connected(
+            self.entity_description.probe_id
+        )
 
     @property
     def icon(self) -> str:
-        """Return icon for probe and grill temperature channels."""
-        if self.entity_description.probe == 4:
+        """Return icon for probe and always-on temperature channels."""
+        if self._always_available:
             return "mdi:thermometer"
         return "mdi:thermometer-probe" if self.available else "mdi:thermometer-probe-off"

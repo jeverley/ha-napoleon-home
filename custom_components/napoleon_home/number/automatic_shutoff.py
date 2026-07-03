@@ -4,27 +4,32 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from custom_components.napoleon_home.const import PROP_AUTO_T_OUT, PROP_TYPE_INT
 from custom_components.napoleon_home.entity import NapoleonHomeEntity
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
 from homeassistant.const import EntityCategory, UnitOfTime
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
+    from custom_components.napoleon_home.device_profiles import DeviceProfile
 
-ENTITY_DESCRIPTIONS: tuple[NumberEntityDescription, ...] = (
-    NumberEntityDescription(
-        key="automatic_shutoff",
-        translation_key="automatic_shutoff",
-        icon="mdi:timer-off-outline",
-        entity_category=EntityCategory.CONFIG,
-        mode=NumberMode.BOX,
-        native_min_value=1,
-        native_max_value=24,
-        native_step=1,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-    ),
-)
+
+def build_entity_descriptions(profile: DeviceProfile) -> tuple[NumberEntityDescription, ...]:
+    """Build the auto-shutoff number description, or none for models without one."""
+    if not profile.capabilities.has_auto_shutoff:
+        return ()
+    return (
+        NumberEntityDescription(
+            key="automatic_shutoff",
+            translation_key="automatic_shutoff",
+            icon="mdi:timer-off-outline",
+            entity_category=EntityCategory.CONFIG,
+            mode=NumberMode.BOX,
+            native_min_value=1,
+            native_max_value=24,
+            native_step=1,
+            native_unit_of_measurement=UnitOfTime.HOURS,
+        ),
+    )
 
 
 class NapoleonHomeAutoShutoffNumber(NumberEntity, NapoleonHomeEntity):
@@ -47,6 +52,6 @@ class NapoleonHomeAutoShutoffNumber(NumberEntity, NapoleonHomeEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set the auto-shutoff timeout on the grill."""
         minutes = int(value) * 60
-        await self.coordinator.async_set_property(PROP_AUTO_T_OUT, PROP_TYPE_INT, minutes)
+        await self.coordinator.async_set_property_by_concept("auto_shutoff", minutes)
         self.coordinator.data.auto_t_out = minutes
         self.coordinator.async_set_updated_data(self.coordinator.data)

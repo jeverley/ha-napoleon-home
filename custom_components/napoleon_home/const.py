@@ -26,6 +26,9 @@ DISPLAY_NAME_UUID = (
 GATT_DEVICE_NAME_UUID = (
     "00002a00-0000-1000-8000-00805f9b34fb"  # Generic Access Device Name (0x2A00) — model string, e.g. "Prestige-1F2"
 )
+OEM_MODEL_UUID = (
+    "00000003-fe28-435b-991a-f1b21bb9bcd0"  # Ayla OEM model string, e.g. "thermometer-mqtt-eu" — no bond required
+)
 
 # Auth
 AUTH_USER = "android.user@email.com"
@@ -40,6 +43,8 @@ CONF_REFRESH_TOKEN = "refresh_token"
 CONF_TOKEN_EXPIRY = "token_expiry"
 CONF_BT_MAC = "bt_mac_address"
 CONF_DSN = "dsn"
+CONF_MODEL = "model"
+CONF_OEM_MODEL = "oem_model"
 
 # Timings (seconds)
 AUTH_TIMEOUT = 15
@@ -100,7 +105,7 @@ POLL_PROPS: list[str] = [
 # Probe temperature sentinel — value returned when probe is not connected
 PROBE_DISCONNECTED = 4095.0
 
-# Napoleon/Ayla BLE device name prefixes from AppConstants.java.
+# Confirmed Napoleon/Ayla BLE advertised device name prefixes.
 # Unprovisioned grills advertise with a local name starting with one of these.
 # Any FE28 advertisement WITH a local name that doesn't match is a non-Napoleon
 # Ayla device sharing the service UUID.
@@ -127,7 +132,7 @@ AYLA_REGION_EU = "eu"
 AYLA_REGION_US = "us"
 AYLA_DEFAULT_REGION = AYLA_REGION_EU
 
-# Ayla OEM model identifiers for Napoleon Prestige grills (from APK decompile)
+# Ayla OEM model identifiers for Napoleon Prestige grills
 AYLA_OEM_MODEL_PRESTIGE_EU = "thermometer-mqtt-eu"
 AYLA_OEM_MODEL_PRESTIGE = "thermometer-mqtt-us"
 
@@ -145,7 +150,6 @@ class _AylaRegion(NamedTuple):
         device_host: Hostname for the Ayla device API (device list, connection config).
         app_id: Napoleon application ID registered with Ayla for this region.
         app_secret: Napoleon application secret registered with Ayla for this region.
-        prestige_oem_model: Ayla OEM model string used to filter Napoleon Prestige grills.
 
     """
 
@@ -153,7 +157,6 @@ class _AylaRegion(NamedTuple):
     device_host: str
     app_id: str
     app_secret: str
-    prestige_oem_model: str
 
 
 # Ayla cloud regions — used once at setup time to fetch the device localKey
@@ -163,13 +166,11 @@ AYLA_REGIONS: dict[str, _AylaRegion] = {
         device_host="ads-eu.aylanetworks.com",
         app_id="smarthome_eu-rA-hQ-id-5Q-id",
         app_secret="smarthome_eu-rA-hQ-id-gHzZGo5048znNn0F9nuyc_PSyBw",
-        prestige_oem_model=AYLA_OEM_MODEL_PRESTIGE_EU,
     ),
     AYLA_REGION_US: _AylaRegion(
         user_host="user-field.aylanetworks.com",
         device_host="ads-field.aylanetworks.com",
         app_id="smarthome_dev-rA-hQ-id",
         app_secret="smarthome_dev-BBeF7xY8xfKBfNcFIx-rhQhA2YY-h64jEJ5ZhCy9GOaWiy0XkbnGc1g",
-        prestige_oem_model=AYLA_OEM_MODEL_PRESTIGE,
     ),
 }

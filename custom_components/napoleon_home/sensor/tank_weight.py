@@ -13,17 +13,23 @@ from homeassistant.const import EntityCategory, UnitOfMass
 if TYPE_CHECKING:
     from custom_components.napoleon_home.coordinator import NapoleonHomeDataUpdateCoordinator
     from custom_components.napoleon_home.data import NapoleonHomeGrillState
+    from custom_components.napoleon_home.device_profiles import DeviceProfile
     from homeassistant.helpers.typing import StateType
 
-ENTITY_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
-    SensorEntityDescription(
-        key="tank_weight",
-        translation_key="tank_weight",
-        device_class=SensorDeviceClass.WEIGHT,
-        state_class=SensorStateClass.MEASUREMENT,
-        icon="mdi:propane-tank",
-    ),
-)
+
+def build_entity_descriptions(profile: DeviceProfile) -> tuple[SensorEntityDescription, ...]:
+    """Build the tank weight sensor description, or none for models with no gas tank."""
+    if not profile.capabilities.has_gas_tank:
+        return ()
+    return (
+        SensorEntityDescription(
+            key="tank_weight",
+            translation_key="tank_weight",
+            device_class=SensorDeviceClass.WEIGHT,
+            state_class=SensorStateClass.MEASUREMENT,
+            icon="mdi:propane-tank",
+        ),
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -33,32 +39,42 @@ class NapoleonHomeTankDebugSensorEntityDescription(SensorEntityDescription):
     value_fn: Callable[[NapoleonHomeGrillState], StateType] = lambda _: None
 
 
-DEBUG_ENTITY_DESCRIPTIONS: tuple[NapoleonHomeTankDebugSensorEntityDescription, ...] = (
-    NapoleonHomeTankDebugSensorEntityDescription(
-        key="gas_tank_name",
-        translation_key="gas_tank_name",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        icon="mdi:propane-tank",
-        value_fn=lambda s: s.gas_tank_name,
-    ),
-    NapoleonHomeTankDebugSensorEntityDescription(
-        key="region",
-        translation_key="region",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        icon="mdi:earth",
-        value_fn=lambda s: s.region,
-    ),
-    NapoleonHomeTankDebugSensorEntityDescription(
-        key="country",
-        translation_key="country",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        icon="mdi:flag",
-        value_fn=lambda s: s.country,
-    ),
-)
+def build_debug_entity_descriptions(profile: DeviceProfile) -> tuple[NapoleonHomeTankDebugSensorEntityDescription, ...]:
+    """Build debug metadata sensor descriptions.
+
+    Region and country are general grill metadata, always included. Gas tank
+    name only applies to models with a gas tank.
+    """
+    descriptions = [
+        NapoleonHomeTankDebugSensorEntityDescription(
+            key="region",
+            translation_key="region",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            entity_registry_enabled_default=False,
+            icon="mdi:earth",
+            value_fn=lambda s: s.region,
+        ),
+        NapoleonHomeTankDebugSensorEntityDescription(
+            key="country",
+            translation_key="country",
+            entity_category=EntityCategory.DIAGNOSTIC,
+            entity_registry_enabled_default=False,
+            icon="mdi:flag",
+            value_fn=lambda s: s.country,
+        ),
+    ]
+    if profile.capabilities.has_gas_tank:
+        descriptions.append(
+            NapoleonHomeTankDebugSensorEntityDescription(
+                key="gas_tank_name",
+                translation_key="gas_tank_name",
+                entity_category=EntityCategory.DIAGNOSTIC,
+                entity_registry_enabled_default=False,
+                icon="mdi:propane-tank",
+                value_fn=lambda s: s.gas_tank_name,
+            )
+        )
+    return tuple(descriptions)
 
 
 class NapoleonHomeTankWeightSensor(SensorEntity, NapoleonHomeEntity):

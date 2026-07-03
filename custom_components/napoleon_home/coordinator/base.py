@@ -19,16 +19,19 @@ from custom_components.napoleon_home.const import (
     CONF_BT_MAC,
     CONF_DEVICES,
     CONF_LOCAL_KEY,
+    CONF_MODEL,
     DOMAIN,
     LOGGER,
     POLL_INTERVAL_S,
 )
 from custom_components.napoleon_home.coordinator.listeners import NapoleonHomeBLEMixin
 from custom_components.napoleon_home.data import NapoleonHomeGrillState
+from custom_components.napoleon_home.device_profiles import PRESTIGE_PROFILE, get_profile_by_key
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.data import NapoleonHomeConfigEntry
+    from custom_components.napoleon_home.device_profiles import DeviceProfile
 
 
 class NapoleonHomeDataUpdateCoordinator(DataUpdateCoordinator[NapoleonHomeGrillState], NapoleonHomeBLEMixin):
@@ -73,6 +76,11 @@ class NapoleonHomeDataUpdateCoordinator(DataUpdateCoordinator[NapoleonHomeGrillS
         self._dsn = dsn
         device_data = config_entry.data[CONF_DEVICES][dsn]
         mac = device_data[CONF_BT_MAC]
+        # Detection happens once at config-flow time and is trusted thereafter;
+        # the coordinator does not re-run detection heuristics. Missing CONF_MODEL
+        # (pre-migration entries) defaults to Prestige — the only model that could
+        # have been configured before this field existed.
+        self._profile: DeviceProfile = get_profile_by_key(device_data.get(CONF_MODEL, PRESTIGE_PROFILE.key))
         super().__init__(
             hass,
             LOGGER,
@@ -92,6 +100,11 @@ class NapoleonHomeDataUpdateCoordinator(DataUpdateCoordinator[NapoleonHomeGrillS
     def dsn(self) -> str:
         """Return the DSN for this grill."""
         return self._dsn
+
+    @property
+    def profile(self) -> DeviceProfile:
+        """Return the DeviceProfile resolved for this grill at config-flow time."""
+        return self._profile
 
     @property
     def mac(self) -> str:

@@ -42,6 +42,7 @@ from custom_components.napoleon_home.const import (
     GATT_DEVICE_NAME_UUID,
     INBOX_UUID,
     LOGGER,
+    OEM_MODEL_UUID,
     OUTBOX_UUID,
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -114,6 +115,7 @@ class NapoleonHomeBLESession:
         self._dsn: str | None = None
         self._display_name: str | None = None
         self._model: str | None = None
+        self._oem_model: str | None = None
 
     # ── Public properties ────────────────────────────────────────────────────
 
@@ -141,6 +143,16 @@ class NapoleonHomeBLESession:
     def model(self) -> str | None:
         """Device model string from Generic Access Device Name (0x2A00), or None."""
         return self._model
+
+    @property
+    def oem_model(self) -> str | None:
+        """Ayla oem_model string from GATT_CHAR_OEM_MODEL (00000003-fe28), or None.
+
+        Open characteristic (no bonding required) — the same string format as
+        the Ayla cloud API's ``oem_model`` field, used to resolve the grill's
+        DeviceProfile without needing prefix heuristics.
+        """
+        return self._oem_model
 
     # ── Notification dispatch ────────────────────────────────────────────────
 
@@ -211,10 +223,13 @@ class NapoleonHomeBLESession:
 
         LOGGER.debug("Napoleon Home %s: BLE connected, reading open characteristics", self._mac)
 
-        # 0x2A00 (Generic Access Device Name) is readable without a bond — gives the
-        # model string (e.g. "Prestige-1F2"). DSN and display name require encryption
-        # so they are read after pair() below.
+        # 0x2A00 (Generic Access Device Name) and GATT_CHAR_OEM_MODEL are both
+        # readable without a bond. 0x2A00 gives a freeform display name (e.g.
+        # "Prestige-1F2"); GATT_CHAR_OEM_MODEL gives the exact oem_model string
+        # (e.g. "thermometer-mqtt-eu") used to resolve the DeviceProfile. DSN
+        # and display name require encryption so they are read after pair() below.
         self._model = await self._read_gatt_char_string(GATT_DEVICE_NAME_UUID, "model (0x2A00)")
+        self._oem_model = await self._read_gatt_char_string(OEM_MODEL_UUID, "oem_model")
 
         # Bond before any INBOX write — INBOX (01000001-fe28) requires an encrypted,
         # bonded link. On first run this triggers Just Works SMP; on subsequent runs
@@ -255,8 +270,9 @@ class NapoleonHomeBLESession:
     async def read_open_characteristics(self, ble_device: BLEDevice) -> None:
         """Connect and read open GATT characteristics. Does not pair or subscribe.
 
-        Only 0x2A00 (Generic Access Device Name) is readable without a bond.
-        DSN and display name require encryption and are not read here.
+        0x2A00 (Generic Access Device Name) and GATT_CHAR_OEM_MODEL are both
+        readable without a bond. DSN and display name require encryption and
+        are not read here.
         """
         self._client = await establish_connection(
             BleakClientWithServiceCache,
@@ -266,6 +282,7 @@ class NapoleonHomeBLESession:
         )
         LOGGER.debug("Napoleon Home %s: BLE connected, reading open characteristics", self._mac)
         self._model = await self._read_gatt_char_string(GATT_DEVICE_NAME_UUID, "model (0x2A00)")
+        self._oem_model = await self._read_gatt_char_string(OEM_MODEL_UUID, "oem_model")
 
     async def disconnect(self) -> None:
         """Disconnect from the grill (suppresses errors)."""

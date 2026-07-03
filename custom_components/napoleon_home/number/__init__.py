@@ -6,9 +6,15 @@ from typing import TYPE_CHECKING
 
 from custom_components.napoleon_home.const import PARALLEL_UPDATES as PARALLEL_UPDATES
 
-from .automatic_shutoff import ENTITY_DESCRIPTIONS as AUTO_SHUTOFF_DESCRIPTIONS, NapoleonHomeAutoShutoffNumber
-from .tank_calibration import ENTITY_DESCRIPTIONS as TANK_CALIBRATION_DESCRIPTIONS, NapoleonHomeTankCalibrationNumber
-from .target_temp import ENTITY_DESCRIPTIONS, NapoleonHomeTargetTempNumber
+from .automatic_shutoff import (
+    NapoleonHomeAutoShutoffNumber,
+    build_entity_descriptions as build_auto_shutoff_descriptions,
+)
+from .tank_calibration import (
+    NapoleonHomeTankCalibrationNumber,
+    build_entity_descriptions as build_tank_calibration_descriptions,
+)
+from .target_temp import NapoleonHomeTargetTempNumber, build_entity_descriptions as build_target_temp_descriptions
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.data import NapoleonHomeConfigEntry
@@ -23,13 +29,14 @@ async def async_setup_entry(
 ) -> None:
     """Set up the number platform."""
     for coordinator in entry.runtime_data.values():
+        profile = coordinator.profile
         async_add_entities(
             (
                 NapoleonHomeAutoShutoffNumber(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in AUTO_SHUTOFF_DESCRIPTIONS
+                for entity_description in build_auto_shutoff_descriptions(profile)
             ),
         )
         async_add_entities(
@@ -38,7 +45,7 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in ENTITY_DESCRIPTIONS
+                for entity_description in build_target_temp_descriptions(profile)
             ),
         )
         async_add_entities(
@@ -47,6 +54,6 @@ async def async_setup_entry(
                     coordinator=coordinator,
                     entity_description=entity_description,
                 )
-                for entity_description in TANK_CALIBRATION_DESCRIPTIONS
+                for entity_description in build_tank_calibration_descriptions(profile)
             ),
         )

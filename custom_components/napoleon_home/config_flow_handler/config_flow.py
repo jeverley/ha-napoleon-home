@@ -72,11 +72,17 @@ from custom_components.napoleon_home.const import (
     CONF_DEVICES,
     CONF_LOCAL_KEY,
     CONF_LOCAL_KEY_ID,
+    CONF_MODEL,
+    CONF_OEM_MODEL,
     CONF_REFRESH_TOKEN,
     CONF_TOKEN_EXPIRY,
     DOMAIN,
     LOGGER,
-    NAPOLEON_NAME_PREFIXES,
+)
+from custom_components.napoleon_home.device_profiles import (
+    DEVICE_BLE_NAME_PREFIXES,
+    SUPPORTED_OEM_MODELS,
+    resolve_profile,
 )
 from homeassistant import config_entries
 from homeassistant.components.bluetooth import (
@@ -190,7 +196,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
 
     @staticmethod
     def async_get_options_flow(
@@ -219,6 +225,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self._ble_dsn: str | None = None
         self._ble_display_name: str | None = None
         self._ble_model: str | None = None
+        self._ble_oem_model: str | None = None
         self._username: str = ""
         self._password: str = ""
         self._region_key: str = ""
@@ -262,15 +269,19 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 )
                 return self.async_abort(reason="already_configured")
 
-        # Napoleon grills advertise a local name starting with a known prefix.
-        # If a local name is present but doesn't match any known prefix, this is a
-        # non-Napoleon Ayla device sharing the FE28 service UUID — fast reject.
-        # HA sets discovery_info.name to the address when no local name is present,
+        # Supported grills advertise a local name starting with a known prefix.
+        # This can't check the exact oem_model yet (no GATT connection at this
+        # point) so it's a coarse heuristic — narrower than "any Napoleon
+        # device" (const.NAPOLEON_NAME_PREFIXES also matches fireplaces,
+        # thermostats, and accessories this integration doesn't support). This
+        # cheap name pre-filter followed by an exact GATT check once connected
+        # is a well-established two-tier BLE discovery pattern. HA sets
+        # discovery_info.name to the address when no local name is present,
         # so treat name == address as "no local name".
         local_name = discovery_info.name if discovery_info.name != discovery_info.address else None
-        if local_name and not local_name.startswith(NAPOLEON_NAME_PREFIXES):
+        if local_name and not local_name.startswith(DEVICE_BLE_NAME_PREFIXES):
             LOGGER.debug(
-                "Napoleon Home: setup_stage=bluetooth_step_abort reason=not_napoleon address=%s name=%s",
+                "Napoleon Home: setup_stage=bluetooth_step_abort reason=not_supported_grill address=%s name=%s",
                 discovery_info.address,
                 local_name,
             )
@@ -288,7 +299,13 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         # display name before showing the confirmation form.
         if not local_name and not self._ble_display_name:
             await self._async_read_ble_metadata(self._mac)
-            if self._ble_model and not self._ble_model.startswith(NAPOLEON_NAME_PREFIXES):
+            # oem_model (GATT_CHAR_OEM_MODEL) is an exact match once connected — no
+            # prefix guessing needed. Only fall back to the freeform name prefix
+            # check if that read failed for some reason.
+            if self._ble_oem_model:
+                if self._ble_oem_model not in SUPPORTED_OEM_MODELS:
+                    return self.async_abort(reason="not_supported")
+            elif self._ble_model and not self._ble_model.startswith(DEVICE_BLE_NAME_PREFIXES):
                 return self.async_abort(reason="not_supported")
             if self._ble_display_name:
                 self._name = self._ble_display_name
@@ -310,7 +327,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def _async_read_ble_metadata(self, mac: str) -> None:
-        """Best-effort read of model name (0x2A00) from open GATT characteristics.
+        """Best-effort read of model name (0x2A00) and oem_model from open GATT characteristics.
 
         Connects without pairing or subscribing. All failures are suppressed —
         callers fall back to the MAC address as the device name.
@@ -323,6 +340,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             async with NapoleonHomeBLESession(mac) as session:
                 await session.read_open_characteristics(ble_device)
                 self._ble_model = session.model
+                self._ble_oem_model = session.oem_model
                 if not self._ble_display_name:
                     self._ble_display_name = session.display_name or session.model
         except Exception:  # noqa: BLE001
@@ -483,6 +501,8 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     self._ble_dsn = session.dsn
                     if self._ble_dsn is None:
                         LOGGER.debug("Napoleon Home %s: DSN unavailable — will match by MAC", mac)
+                if session.oem_model and not self._ble_oem_model:
+                    self._ble_oem_model = session.oem_model
                 if session.display_name:
                     self._ble_display_name = session.display_name
                 elif not self._ble_display_name and session.model:
@@ -543,7 +563,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             self._password = password
             self._region_key = region_key
 
-            devices: list[tuple[str, str, str]] = []
+            devices: list[tuple[str, str, str, str]] = []
             async with self._handle_api_errors(errors):
                 region = AYLA_REGIONS[region_key]
                 http_session = async_get_clientsession(self.hass)
@@ -554,7 +574,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 # Match device: prefer DSN from GATT read. If unknown or stale,
                 # try every account device and let real BLE auth decide — more
                 # robust than guessing a MAC offset.
-                match: tuple[str, str, str] | None = None
+                match: tuple[str, str, str, str] | None = None
                 if self._ble_dsn:
                     match = next((d for d in devices if d[0] == self._ble_dsn), None)
                     if match is not None:
@@ -596,7 +616,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _async_try_candidates(
         self,
-        candidates: list[tuple[str, str, str]],
+        candidates: list[tuple[str, str, str, str]],
         client: NapoleonHomeApiClient,
         access_token: str,
     ) -> tuple[config_entries.ConfigFlowResult | None, dict[str, str]]:
@@ -609,11 +629,11 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """
         errors: dict[str, str] = {}
         key_rejected = False
-        for dsn, device_name, _ in candidates:
+        for dsn, device_name, _mac, oem_model in candidates:
             LOGGER.debug("Napoleon Home: key_retrieval attempting dsn=%s name=%s", dsn, device_name)
             try:
                 local_key, local_key_id = await client.async_fetch_key(access_token, dsn)
-                return await self._async_finish(dsn, device_name, local_key, local_key_id), {}
+                return await self._async_finish(dsn, device_name, oem_model, local_key, local_key_id), {}
             except NapoleonHomeNotProvisionedError:
                 raise
             except ConfigEntryAuthFailed:
@@ -639,6 +659,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         dsn: str,
         device_name: str,
+        oem_model: str,
         local_key: str,
         local_key_id: int,
     ) -> config_entries.ConfigFlowResult:
@@ -652,6 +673,9 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         Args:
             dsn: Ayla device serial number of the grill to configure.
             device_name: Display name used as the device's friendly name.
+            oem_model: Ayla oem_model string for this device, used to resolve
+                its DeviceProfile (cloud value; confirms the BLE-read value
+                from earlier in the flow, if any).
             local_key: Ayla local key for BLE authentication.
             local_key_id: Ayla local key ID stored alongside the key.
 
@@ -720,6 +744,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             hub_unique_id,
         )
         title = device_name or mac
+        profile = resolve_profile(oem_model, ble_name=self._ble_model)
         hub_data = {
             CONF_REGION: self._region_key,
             CONF_USERNAME: self._username,
@@ -731,6 +756,8 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_BT_MAC: mac,
             CONF_LOCAL_KEY: local_key,
             CONF_LOCAL_KEY_ID: local_key_id,
+            CONF_MODEL: profile.key,
+            CONF_OEM_MODEL: oem_model,
             "name": title,
         }
 
@@ -794,7 +821,7 @@ class NapoleonHomeConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             if target_name and folded == target_name:
                 _add_candidate(address)
                 continue
-            if name.startswith(NAPOLEON_NAME_PREFIXES):
+            if name.startswith(DEVICE_BLE_NAME_PREFIXES):
                 prestige_like.append(address)
 
         for mac in prestige_like:

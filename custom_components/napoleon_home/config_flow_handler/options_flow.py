@@ -34,11 +34,14 @@ from custom_components.napoleon_home.const import (
     CONF_DSN,
     CONF_LOCAL_KEY,
     CONF_LOCAL_KEY_ID,
+    CONF_MODEL,
+    CONF_OEM_MODEL,
     CONF_REFRESH_TOKEN,
     CONF_TOKEN_EXPIRY,
     DOMAIN,
     LOGGER,
 )
+from custom_components.napoleon_home.device_profiles import resolve_profile
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_REGION, CONF_USERNAME
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
@@ -75,7 +78,7 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         """Initialise options flow state."""
-        self._devices: list[tuple[str, str, str]] = []  # [(dsn, name, mac)]
+        self._devices: list[tuple[str, str, str, str]] = []  # [(dsn, name, mac, oem_model)]
         self._password: str = ""
 
     async def async_step_init(
@@ -134,8 +137,10 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
                     for domain_entry in self.hass.config_entries.async_entries(DOMAIN)
                     for dsn in domain_entry.data.get(CONF_DEVICES, {})
                 }
-                available: list[tuple[str, str, str]] = [
-                    (dsn, name, mac) for dsn, name, mac in all_devices if dsn not in configured_dsns and mac
+                available: list[tuple[str, str, str, str]] = [
+                    (dsn, name, mac, oem_model)
+                    for dsn, name, mac, oem_model in all_devices
+                    if dsn not in configured_dsns and mac
                 ]
 
                 if not available:
@@ -145,9 +150,11 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
                 self._password = password
 
                 if len(available) == 1:
-                    dsn, name, mac = available[0]
+                    dsn, name, mac, oem_model = available[0]
                     try:
-                        return await self._async_create_device(client, username, password, region_key, dsn, name, mac)
+                        return await self._async_create_device(
+                            client, username, password, region_key, dsn, name, mac, oem_model
+                        )
                     except ConfigEntryAuthFailed:
                         errors["base"] = "invalid_auth"
                     except HomeAssistantError:
@@ -174,14 +181,15 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             selected_dsn = user_input[CONF_DSN]
-            name = next((n for dsn, n, _mac in self._devices if dsn == selected_dsn), selected_dsn)
-            mac = next((_mac for dsn, _n, _mac in self._devices if dsn == selected_dsn), "")
+            name = next((n for dsn, n, _mac, _oem in self._devices if dsn == selected_dsn), selected_dsn)
+            mac = next((_mac for dsn, _n, _mac, _oem in self._devices if dsn == selected_dsn), "")
+            oem_model = next((_oem for dsn, _n, _mac, _oem in self._devices if dsn == selected_dsn), "")
             try:
                 region = AYLA_REGIONS[region_key]
                 session = async_get_clientsession(self.hass)
                 client = NapoleonHomeApiClient(region, session)
                 return await self._async_create_device(
-                    client, username, self._password, region_key, selected_dsn, name, mac
+                    client, username, self._password, region_key, selected_dsn, name, mac, oem_model
                 )
             except NapoleonHomeApiClientAuthenticationError:
                 errors["base"] = "invalid_auth"
@@ -197,7 +205,7 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
                 LOGGER.exception("Unexpected exception during Napoleon Home grill pick")
                 errors["base"] = "unknown"
 
-        options = [SelectOptionDict(value=dsn, label=name) for dsn, name, _mac in self._devices]
+        options = [SelectOptionDict(value=dsn, label=name) for dsn, name, _mac, _oem in self._devices]
         schema = vol.Schema(
             {
                 vol.Required(CONF_DSN): SelectSelector(
@@ -220,6 +228,7 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
         dsn: str,
         name: str,
         mac: str,
+        oem_model: str,
     ) -> config_entries.ConfigFlowResult:
         """Fetch the local key and add the grill to entry.data[CONF_DEVICES]."""
         _, local_key, local_key_id, access_token, refresh_token, token_expiry = await client.async_get_local_key(
@@ -230,6 +239,7 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
             msg = f"Napoleon Home {dsn}: cannot add grill without BLE MAC"
             raise HomeAssistantError(msg)
 
+        profile = resolve_profile(oem_model)
         entry = self.config_entry
         updated_devices = {
             **entry.data.get(CONF_DEVICES, {}),
@@ -237,6 +247,8 @@ class NapoleonHomeOptionsFlow(config_entries.OptionsFlow):
                 CONF_BT_MAC: mac,
                 CONF_LOCAL_KEY: local_key,
                 CONF_LOCAL_KEY_ID: local_key_id,
+                CONF_MODEL: profile.key,
+                CONF_OEM_MODEL: oem_model,
                 "name": name,
             },
         }

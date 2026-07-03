@@ -36,7 +36,6 @@ from custom_components.napoleon_home.const import (
     DOMAIN,
     LOGGER,
     MAX_CONNECT_FAILURES,
-    POLL_PROPS,
     PROP_BSMODE,
     PROP_TYPE_BOOL,
 )
@@ -53,6 +52,7 @@ from homeassistant.helpers import issue_registry as ir
 
 if TYPE_CHECKING:
     from custom_components.napoleon_home.data import NapoleonHomeConfigEntry, NapoleonHomeGrillState
+    from custom_components.napoleon_home.device_profiles import DeviceProfile
     from homeassistant.core import HomeAssistant
 
 
@@ -83,6 +83,7 @@ class NapoleonHomeBLEMixin:
         data: NapoleonHomeGrillState
         update_interval: timedelta | None
         _poll_interval: int
+        profile: DeviceProfile
 
         def async_set_updated_data(self, data: NapoleonHomeGrillState) -> None:  # noqa: D102
             ...
@@ -489,11 +490,11 @@ class NapoleonHomeBLEMixin:
 
     async def _poll_properties(self) -> None:
         """
-        Send a ``Gpr`` poll request for every property in ``POLL_PROPS``.
+        Send a ``Gpr`` poll request for every property in the active DeviceProfile.
 
         Called by ``_async_update_data`` on each coordinator refresh cycle.
         """
-        for name in POLL_PROPS:
+        for name in self.profile.poll_properties:
             await self._send_msg("Gpr", {"n": name})
 
     async def async_set_property(self, name: str, type_code: int, value: Any) -> None:
@@ -510,6 +511,23 @@ class NapoleonHomeBLEMixin:
 
         """
         await self._send_msg("Opr", {"n": name, "t": type_code, "v": value})
+
+    async def async_set_property_by_concept(self, concept: str, value: Any) -> None:
+        """
+        Write a property value identified by its profile concept name.
+
+        Resolves the wire name and type code from the active DeviceProfile, so
+        entity code stays model-agnostic even when a different model uses a
+        different wire name/type/casing convention for the same concept.
+
+        Args:
+            concept: The profile-level concept key (e.g. ``"temperature_unit"``,
+                ``"gas_unit"``) — see the active DeviceProfile's ``properties`` map.
+            value: The value to set, matching the concept's Ayla type code.
+
+        """
+        spec = self.profile.properties[concept]
+        await self.async_set_property(spec.name, spec.type_code, value)
 
     async def async_set_bsmode(self, value: int) -> None:
         """Write BSMODE and persist as the desired value so re-assert logic uses it."""

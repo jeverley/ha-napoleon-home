@@ -27,6 +27,7 @@ from typing import Any
 import aiohttp
 
 from custom_components.napoleon_home.const import LOGGER, _AylaRegion
+from custom_components.napoleon_home.device_profiles import SUPPORTED_OEM_MODELS
 
 
 class NapoleonHomeApiClientError(Exception):
@@ -71,7 +72,7 @@ class NapoleonHomeApiClient:
     """
     Ayla cloud HTTP client for the napoleon_home integration.
 
-    Used at config flow time to authenticate the user, discover Napoleon Prestige
+    Used at config flow time to authenticate the user, discover supported Napoleon
     grills, and fetch per-device BLE local keys. The keys, key IDs, and Ayla
     tokens are persisted in the config entry. Tokens are refreshed on-demand
     only when an actual cloud call is required.
@@ -103,7 +104,7 @@ class NapoleonHomeApiClient:
 
         Args:
             region: The Ayla region configuration (_AylaRegion named tuple)
-                containing API hostnames, app credentials, and OEM model filter.
+                containing API hostnames and app credentials.
             session: The aiohttp ClientSession to use for requests (provided
                 by Home Assistant via async_get_clientsession).
 
@@ -121,8 +122,8 @@ class NapoleonHomeApiClient:
         Sign in and return the DSN, local key, key ID, and fresh tokens.
 
         If a DSN is provided the local key is fetched for that specific device.
-        Otherwise, the user's device list is queried and the first Napoleon
-        Prestige grill matching the region's OEM model is used.
+        Otherwise, the user's device list is queried and the first supported
+        Napoleon grill (matching a registered DeviceProfile's oem_model) is used.
 
         Args:
             username: Napoleon app account email address.
@@ -135,14 +136,14 @@ class NapoleonHomeApiClient:
         Raises:
             NapoleonHomeApiClientAuthenticationError: If sign-in fails.
             NapoleonHomeApiClientCommunicationError: On network errors.
-            NapoleonHomeApiClientError: If no Napoleon Prestige grill is found.
+            NapoleonHomeApiClientError: If no supported Napoleon grill is found.
 
         """
         access_token, refresh_token, expiry = await self._async_sign_in(username, password)
         if dsn is None:
             devices = await self._async_list_devices(access_token)
             if not devices:
-                msg = f"No Napoleon Prestige grill found in Ayla account (expected OEM model '{self._region.prestige_oem_model}')"
+                msg = f"No supported Napoleon grill found in Ayla account (expected one of {sorted(SUPPORTED_OEM_MODELS)})"
                 raise NapoleonHomeApiClientError(msg)
             dsn = devices[0][0]
         local_key, local_key_id = await self._async_fetch_local_key(access_token, dsn)
@@ -152,9 +153,9 @@ class NapoleonHomeApiClient:
         self,
         username: str,
         password: str,
-    ) -> tuple[list[tuple[str, str, str]], str, str, float]:
+    ) -> tuple[list[tuple[str, str, str, str]], str, str, float]:
         """
-        Sign in and return all Napoleon grills plus fresh tokens.
+        Sign in and return all supported Napoleon grills plus fresh tokens.
 
         Args:
             username: Napoleon app account email address.
@@ -162,7 +163,7 @@ class NapoleonHomeApiClient:
 
         Returns:
             ``(devices, access_token, refresh_token, token_expiry)`` where
-            ``devices`` is a list of ``(dsn, display_name, mac)`` tuples.
+            ``devices`` is a list of ``(dsn, display_name, mac, oem_model)`` tuples.
 
         Raises:
             NapoleonHomeApiClientAuthenticationError: If sign-in fails.
@@ -296,7 +297,7 @@ class NapoleonHomeApiClient:
         match = next((d for d in devices if d[2].lower() == mac.lower()), None)
         if match is None:
             return None
-        dsn, name, _ = match
+        dsn, name, _mac, _oem_model = match
         local_key, local_key_id = await self._async_fetch_local_key(access_token, dsn)
         return dsn, name, local_key, local_key_id
 
@@ -330,7 +331,9 @@ class NapoleonHomeApiClient:
             return None
 
         devices = await self._async_list_devices(access_token)
-        devices_by_mac = {device_mac.lower(): (dsn, name) for dsn, name, device_mac in devices if device_mac}
+        devices_by_mac = {
+            device_mac.lower(): (dsn, name) for dsn, name, device_mac, _oem_model in devices if device_mac
+        }
 
         for candidate in candidates:
             match = devices_by_mac.get(candidate)
@@ -411,19 +414,19 @@ class NapoleonHomeApiClient:
         expiry: float = time.time() + expires_in
         return access_token, refresh_token, expiry
 
-    async def _async_list_devices(self, access_token: str) -> list[tuple[str, str, str]]:
+    async def _async_list_devices(self, access_token: str) -> list[tuple[str, str, str, str]]:
         """
-        List all Napoleon Prestige grills and return their DSN, name, and MAC.
+        List all supported Napoleon grills and return their DSN, name, MAC, and oem_model.
 
-        Queries ``/apiv1/devices.json`` and filters by the OEM model string defined
-        in the region configuration.
+        Queries ``/apiv1/devices.json`` and filters to oem_models with a registered
+        ``DeviceProfile`` (``device_profiles.SUPPORTED_OEM_MODELS``).
 
         Args:
             access_token: A valid Ayla access token from ``_async_sign_in``.
 
         Returns:
-            A list of ``(dsn, display_name, mac)`` tuples. ``mac`` is formatted
-            as ``"AA:BB:CC:DD:EE:FF"`` or an empty string if not present.
+            A list of ``(dsn, display_name, mac, oem_model)`` tuples. ``mac`` is
+            formatted as ``"AA:BB:CC:DD:EE:FF"`` or an empty string if not present.
 
         Raises:
             NapoleonHomeApiClientCommunicationError: On network errors.
@@ -433,17 +436,17 @@ class NapoleonHomeApiClient:
         headers = {"Authorization": f"auth_token {access_token}"}
         data = await self._api_wrapper(method="get", url=url, headers=headers)
 
-        prestige_model = self._region.prestige_oem_model
-        devices: list[tuple[str, str, str]] = []
+        devices: list[tuple[str, str, str, str]] = []
         for entry in data:
             device = entry.get("device", {})
-            if device.get("oem_model") == prestige_model:
+            oem_model: str = device.get("oem_model", "")
+            if oem_model in SUPPORTED_OEM_MODELS:
                 dsn: str = device["dsn"]
                 name: str = device.get("friendly_name") or device.get("product_name") or dsn
                 raw_mac: str = device.get("mac", "")
                 mac = ":".join(raw_mac[i : i + 2].upper() for i in range(0, 12, 2)) if len(raw_mac) == 12 else ""
-                LOGGER.debug("Found Napoleon Prestige grill: DSN=%s name=%r mac=%s", dsn, name, mac)
-                devices.append((dsn, name, mac))
+                LOGGER.debug("Found Napoleon grill: DSN=%s name=%r mac=%s oem_model=%s", dsn, name, mac, oem_model)
+                devices.append((dsn, name, mac, oem_model))
         return devices
 
     async def _async_fetch_local_key(self, access_token: str, dsn: str) -> tuple[str, int]:

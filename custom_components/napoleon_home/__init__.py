@@ -6,11 +6,22 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from homeassistant.components.bluetooth import async_rediscover_address
-from homeassistant.const import Platform
+from homeassistant.const import CONF_REGION, Platform
 import homeassistant.helpers.config_validation as cv
 
-from .const import CONF_BT_MAC, CONF_DEVICES, DOMAIN
+from .const import (
+    AYLA_OEM_MODEL_PRESTIGE,
+    AYLA_OEM_MODEL_PRESTIGE_EU,
+    AYLA_REGION_US,
+    CONF_BT_MAC,
+    CONF_DEVICES,
+    CONF_MODEL,
+    CONF_OEM_MODEL,
+    DOMAIN,
+    LOGGER,
+)
 from .coordinator import NapoleonHomeDataUpdateCoordinator
+from .device_profiles import PRESTIGE_PROFILE
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -28,6 +39,48 @@ PLATFORMS: list[Platform] = [
 ]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant,
+    entry: NapoleonHomeConfigEntry,
+) -> bool:
+    """
+    Migrate a config entry to the current schema version.
+
+    1.1 -> 1.2: adds CONF_MODEL/CONF_OEM_MODEL to each device dict, needed to
+    resolve a DeviceProfile now that the integration supports more than one
+    grill model. Every device configured before this version was necessarily
+    a Prestige grill (the Ayla cloud API only ever returned Prestige devices
+    before this change), so backfilling is deterministic and lossless.
+    """
+    if entry.version > 1 or (entry.version == 1 and entry.minor_version > 2):
+        LOGGER.error(
+            "Napoleon Home: cannot downgrade config entry from version %s.%s",
+            entry.version,
+            entry.minor_version,
+        )
+        return False
+
+    if entry.minor_version < 2:
+        is_us = entry.data.get(CONF_REGION) == AYLA_REGION_US
+        oem_model = AYLA_OEM_MODEL_PRESTIGE if is_us else AYLA_OEM_MODEL_PRESTIGE_EU
+        updated_devices = {
+            dsn: (
+                device
+                if CONF_MODEL in device
+                else {**device, CONF_MODEL: PRESTIGE_PROFILE.key, CONF_OEM_MODEL: oem_model}
+            )
+            for dsn, device in entry.data.get(CONF_DEVICES, {}).items()
+        }
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, CONF_DEVICES: updated_devices},
+            minor_version=2,
+        )
+        LOGGER.debug("Napoleon Home: migrated config entry %s to minor_version=2", entry.entry_id)
+
+    return True
 
 
 async def async_setup_entry(

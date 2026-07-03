@@ -22,14 +22,14 @@ if TYPE_CHECKING:
 
 def build_device_info(coordinator: NapoleonHomeDataUpdateCoordinator) -> DeviceInfo:
     """
-    Build the device registry entry for a Napoleon Prestige grill.
+    Build the device registry entry for a Napoleon grill.
 
     Uses the DSN as the stable device identifier so that the device registry
     entry persists across integration reinstalls and supports future cloud control.
 
     Args:
         coordinator: The BLE coordinator for this grill. Provides DSN,
-            BT MAC address, and device name from the entry's device data dict.
+            BT MAC address, device name, and resolved DeviceProfile.
 
     Returns:
         A ``DeviceInfo`` instance suitable for setting on
@@ -41,6 +41,6 @@ def build_device_info(coordinator: NapoleonHomeDataUpdateCoordinator) -> DeviceI
         identifiers={(DOMAIN, coordinator.dsn)},
         name=device_data["name"],
         manufacturer=MANUFACTURER,
-        model="Prestige",
+        model=coordinator.profile.display_name,
         serial_number=coordinator.dsn,
     )
