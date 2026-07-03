@@ -19,6 +19,7 @@ See _handover/CLAUDE.md — Protocol section.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -36,6 +37,7 @@ from custom_components.napoleon_home.const import (
     DOMAIN,
     LOGGER,
     MAX_CONNECT_FAILURES,
+    POLL_PROPERTY_DELAY_S,
     PROP_BSMODE,
     PROP_TYPE_BOOL,
 )
@@ -492,9 +494,17 @@ class NapoleonHomeBLEMixin:
         """
         Send a ``Gpr`` poll request for every property in the active DeviceProfile.
 
+        Paces requests with a small delay between each write. Firing writes
+        back-to-back with no gap can exhaust the BLE stack's/proxy's buffering
+        under weak signal, surfacing as a GATT "Insufficient resources" error
+        partway through the cycle (observed in practice at low RSSI) — the
+        delay gives the link a moment to drain between writes.
+
         Called by ``_async_update_data`` on each coordinator refresh cycle.
         """
-        for name in self.profile.poll_properties:
+        for index, name in enumerate(self.profile.poll_properties):
+            if index > 0:
+                await asyncio.sleep(POLL_PROPERTY_DELAY_S)
             await self._send_msg("Gpr", {"n": name})
 
     async def async_set_property(self, name: str, type_code: int, value: Any) -> None:
