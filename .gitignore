@@ -19,6 +19,7 @@ node_modules/
 
 # AI agent temporary scratch files and planning notes
 .ai-scratch/
+.claude/
 
 # Runtime artifact created by the template-sync workflow (never commit)
 .templatesyncignore.runtime
@@ -28,6 +29,9 @@ node_modules/
 
 # Local extra Python dependencies (user-specific, see requirements.txt for project deps)
 requirements.local.txt
+
+# Local analysis artifacts
+analysis/
 
 # Created by https://www.toptal.com/developers/gitignore/api/linux,macos,windows,virtualenv,pythonvanilla,visualstudiocode,homeassistant
 # Edit at https://www.toptal.com/developers/gitignore?templates=linux,macos,windows,virtualenv,pythonvanilla,visualstudiocode,homeassistant
@@ -248,8 +252,3 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,macos,windows,virtualenv,pythonvanilla,visualstudiocode,homeassistant
-ble_client.py
-source.zip
-btmon_live.log
-ble_session_*.log
-.claude/
