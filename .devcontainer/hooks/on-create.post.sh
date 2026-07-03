@@ -8,17 +8,14 @@
 
 set -euo pipefail
 
-WORKSPACE_ROOT="${CONTAINER_WORKSPACE_FOLDER:-$(git rev-parse --show-toplevel)}"
-CLAUDE_SCRATCH="$WORKSPACE_ROOT/.ai-scratch/.claude"
+_ai_config_dir="$HOME/ai-config"
 
-mkdir -p "$CLAUDE_SCRATCH"
+# Fix ownership of the ai-config volume mount point (Docker creates it as root:root).
+sudo chown vscode:vscode "$_ai_config_dir"
 
-mkdir -p "$HOME/.claude"
-sudo chown vscode:vscode "$HOME/.claude"
+# Symlink AI tool paths into the shared ai-config volume so they persist
+# across container rebuilds.
+mkdir -p "$_ai_config_dir/.claude"
+ln -sfn "$_ai_config_dir/.claude" "$HOME/.claude"
 
-if [[ -z "$(find "$HOME/.claude" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]] && [[ -d "$CLAUDE_SCRATCH" ]]; then
-    if [[ -n "$(find "$CLAUDE_SCRATCH" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
-        echo "Migrating Claude Code data from .ai-scratch/.claude/ to the Claude volume..."
-        cp -a "$CLAUDE_SCRATCH/." "$HOME/.claude/"
-    fi
-fi
+unset _ai_config_dir
