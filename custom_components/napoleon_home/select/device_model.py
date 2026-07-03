@@ -84,14 +84,10 @@ class NapoleonHomeDeviceModelSelect(SelectEntity, NapoleonHomeEntity):
         """Set the device model size on the grill, preserving the current fuel type."""
         current = self._current_fuel_type
         if current is None:
-            # TEMPORARY DIAGNOSTIC: DTYPE has never been successfully read on
-            # this hardware, so the real current fuel type is unknown. Assume
-            # propane (confirmed separately via real EMTY_TNK_W/F_TNKWT tank
-            # readings) so this write can go out at all, purely to test
-            # whether the grill accepts an Opr write to DTYPE. Revert this
-            # fallback once that's answered — production code must not guess.
-            current = FuelType.PROPANE_500
-        new_fuel_type = _NEW_FUEL_TYPE.get((current, option), current)
+            return
+        new_fuel_type = _NEW_FUEL_TYPE.get((current, option))
+        if new_fuel_type is None:
+            return
         await self.coordinator.async_set_property_by_concept("fuel_type", new_fuel_type.value)
         self.coordinator.data.dtype = new_fuel_type.value
         self.coordinator.async_set_updated_data(self.coordinator.data)

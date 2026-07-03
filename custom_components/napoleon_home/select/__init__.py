@@ -54,8 +54,14 @@ async def async_setup_entry(
                 for entity_description in build_device_model_descriptions(profile)
             ),
         )
-        coordinator.async_add_gas_tank_listener(
-            _make_gas_tank_select_adder(coordinator, async_add_entities),
+        # TEMPORARY DIAGNOSTIC: create tank_unit unconditionally instead of via
+        # async_add_gas_tank_listener, since DTYPE can't be read on the test
+        # hardware and would otherwise never resolve to propane, meaning this
+        # entity would never be created at all. Revert to the listener-gated
+        # version once the GS_UNT write test is answered.
+        async_add_entities(
+            NapoleonHomeGasUnitSelect(coordinator=coordinator, entity_description=entity_description)
+            for entity_description in build_gas_unit_descriptions()
         )
 
 
