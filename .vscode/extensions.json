@@ -8,7 +8,9 @@
     "ms-python.python",
     "ms-python.vscode-pylance",
     "ms-vscode-remote.remote-containers",
+    "openai.chatgpt",
     "redhat.vscode-yaml",
     "tamasfe.even-better-toml"
-  ]
+  ],
+  "unwantedRecommendations": ["ms-python.pylint"]
 }
